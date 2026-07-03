@@ -64,7 +64,7 @@ Pure logic lives in the `SpaceRenamerCore` SwiftPM library and is fully unit-tes
 
 ```sh
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test
-# Executed 69 tests, with 0 failures
+# Executed 75 tests, with 0 failures
 ```
 
 The `DEVELOPER_DIR` prefix is required: the Command Line Tools' bundled Swift toolchain lacks XCTest, so plain `swift test` fails.

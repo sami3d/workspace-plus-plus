@@ -37,10 +37,14 @@ public final class RelativeArrowSpaceSwitcher: SpaceSwitching {
     }
 
     public func setCurrentSpace(managedSpaceID: String) -> Bool {
+        // Positions come from the full Ctrl+arrow traversal order, NOT the
+        // desktops-only list: "Move left/right a space" hops through
+        // fullscreen tiles too, and the active space may *be* one (switching
+        // out of a fullscreen app must still work).
         guard let snap = reader.snapshot(),
               let activeID = snap.activeID,
-              let from = snap.spaces.first(where: { $0.id == activeID })?.ordinal,
-              let to = snap.spaces.first(where: { $0.id == managedSpaceID })?.ordinal else {
+              let from = snap.navigationIDs.firstIndex(of: activeID),
+              let to = snap.navigationIDs.firstIndex(of: managedSpaceID) else {
             return false
         }
 

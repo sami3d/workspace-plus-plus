@@ -83,6 +83,41 @@ final class SpacesPlistParserTests: XCTestCase {
         XCTAssertEqual(result.spaces.map { $0.storageID }, ["primary"])
     }
 
+    // MARK: - Fullscreen-app spaces (type 4)
+
+    // The fixture mirrors a real CGSCopyManagedDisplaySpaces capture taken
+    // while an app was fullscreen: macOS inserts a `type = 4` space (the
+    // fullscreen tile) *mid-array*, right after the space it was entered from,
+    // and makes it the Current Space.
+
+    func test_fullscreenSpace_excludedFromSpaces_ordinalsStayContiguous() throws {
+        let result = try SpacesPlistParser.parse(try loadFixture("spaces-fullscreen"))
+        XCTAssertEqual(result.spaces.map { $0.id }, ["3", "1", "4"])
+        XCTAssertEqual(result.spaces.map { $0.ordinal }, [1, 2, 3])
+    }
+
+    func test_fullscreenSpace_includedInNavigationIDs_inTraversalOrder() throws {
+        // Ctrl+←/→ ("Move left/right a space") traverses fullscreen tiles too,
+        // so the arrow switcher needs the *full* order including type-4 spaces.
+        let result = try SpacesPlistParser.parse(try loadFixture("spaces-fullscreen"))
+        XCTAssertEqual(result.navigationIDs, ["3", "353", "1", "4"])
+    }
+
+    func test_currentSpaceIsFullscreen_activeIDPreserved() throws {
+        // While the user is in a fullscreen app, the active id is the tile's
+        // MSID — deliberately NOT remapped to a desktop. Consumers fall back
+        // (generic menu-bar title; overlay shows all desktop banners as
+        // non-active, which is correct for the Mission Control thumbnails).
+        let result = try SpacesPlistParser.parse(try loadFixture("spaces-fullscreen"))
+        XCTAssertEqual(result.activeID, "353")
+        XCTAssertFalse(result.spaces.contains { $0.id == "353" })
+    }
+
+    func test_navigationIDs_equalSpaceIDs_whenNoFullscreenSpaces() throws {
+        let result = try SpacesPlistParser.parse(try loadFixture("spaces-real"))
+        XCTAssertEqual(result.navigationIDs, result.spaces.map { $0.id })
+    }
+
     func test_emptyPlist_throws() {
         XCTAssertThrowsError(try SpacesPlistParser.parse([:])) { err in
             XCTAssertEqual(err as? SpacesPlistError, .missingConfiguration)

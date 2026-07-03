@@ -82,6 +82,38 @@ final class RelativeArrowSpaceSwitcherTests: XCTestCase {
         XCTAssertTrue(synth.keys.isEmpty)
     }
 
+    // MARK: - Fullscreen-app tiles in the traversal order
+
+    /// Mirrors the real-machine capture with an app fullscreen: the type-4
+    /// tile ("353") sits mid-traversal (right after the space it was entered
+    /// from). It is absent from `spaces` (not a desktop) but present in
+    /// `navigationIDs`, because Ctrl+←/→ hops through it.
+    private func fullscreenSnapshot(active: String) -> ParsedSpaces {
+        let desktops = ["3", "1", "4", "5"].enumerated()
+            .map { ParsedSpace(id: $0.element, ordinal: $0.offset + 1) }
+        return ParsedSpaces(spaces: desktops, activeID: active,
+                            navigationIDs: ["3", "353", "1", "4", "5"])
+    }
+
+    func test_fullscreenTileBetweenSpaces_countsTheExtraHop() {
+        let reader = FakeReader(); reader.result = fullscreenSnapshot(active: "3")
+        let synth = SpySynth()
+        // "3" → "1" is 1 desktop apart, but the tile sits between them in the
+        // Ctrl+arrow traversal → 2 hops right, not 1.
+        XCTAssertTrue(makeSwitcher(reader, synth).setCurrentSpace(managedSpaceID: "1"))
+        XCTAssertEqual(synth.keys, Array(repeating: right, count: 2))
+    }
+
+    func test_activeIsFullscreenTile_switchesUsingTraversalOrder() {
+        // The user is *in* the fullscreen app: activeID is the tile's MSID,
+        // which is not in `spaces` — the switcher must still resolve it via
+        // the traversal order. "353" (index 1) → "5" (index 4) = 3 hops right.
+        let reader = FakeReader(); reader.result = fullscreenSnapshot(active: "353")
+        let synth = SpySynth()
+        XCTAssertTrue(makeSwitcher(reader, synth).setCurrentSpace(managedSpaceID: "5"))
+        XCTAssertEqual(synth.keys, Array(repeating: right, count: 3))
+    }
+
     func test_synthesizerThrowsMidSequence_returnsFalse() {
         let reader = FakeReader(); reader.result = snapshot(active: "1")  // ordinal 2
         let synth = SpySynth(); synth.throwAtCall = 3   // fail on the 3rd of 9 hops

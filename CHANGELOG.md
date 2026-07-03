@@ -6,6 +6,11 @@ Versioning is [SemVer](https://semver.org/)-ish (`0.1.x` while pre-1.0).
 
 ## [Unreleased]
 
+## [0.1.8] — 2026-07-03
+
+### Fixed
+- **Fullscreen apps no longer trigger bogus overlay banners.** Entering a fullscreen app (e.g. a YouTube video) flashed a default-named banner over it, and exiting left a stuck "Desktop N" banner on the desktop until the next space switch. Cause: macOS inserts a transient `type = 4` space (the fullscreen tile) mid-list when an app goes fullscreen, and the app treated it as a desktop — phantom menu row, shifted ordinals for later desktops, and an overlay window that got orphaned onto the current desktop when macOS destroyed the tile. Fullscreen tiles are now excluded everywhere except Ctrl+arrow hop counting, where the full traversal order (which *does* pass through tiles) is kept so relative switching stays exact — including switching out of a fullscreen app. *Design Revision 2026-07-03*.
+
 ## [0.1.7] — 2026-06-10
 
 ### Changed

@@ -27,12 +27,26 @@ public struct ParsedSpace: Equatable {
 }
 
 public struct ParsedSpaces: Equatable {
+    /// User desktops only (`type == 0`), in Mission Control order. Fullscreen
+    /// app tiles (`type == 4`) are excluded — they are transient, not
+    /// nameable, and macOS inserts them *mid-array* (right after the space
+    /// they were entered from), which would otherwise shift every later
+    /// desktop's ordinal and leak phantom "Desktop N" entries into the menu
+    /// and the Mission Control overlay.
     public let spaces: [ParsedSpace]
+    /// The Current Space's MSID — possibly a fullscreen tile's, in which case
+    /// it matches no entry in `spaces` (consumers fall back gracefully).
     public let activeID: String?
+    /// Full Ctrl+←/→ traversal order — *all* spaces' MSIDs, including
+    /// fullscreen tiles. "Move left/right a space" hops through tiles, so the
+    /// relative-arrow switcher must count them (and can navigate out of one).
+    public let navigationIDs: [String]
 
-    public init(spaces: [ParsedSpace], activeID: String?) {
+    public init(spaces: [ParsedSpace], activeID: String?,
+                navigationIDs: [String]? = nil) {
         self.spaces = spaces
         self.activeID = activeID
+        self.navigationIDs = navigationIDs ?? spaces.map { $0.id }
     }
 }
 
@@ -55,14 +69,22 @@ public enum SpacesPlistParser {
             throw SpacesPlistError.noMonitors
         }
         let spacesArray = (primary["Spaces"] as? [[String: Any]]) ?? []
-        let parsed: [ParsedSpace] = try spacesArray.enumerated().map { idx, dict in
+        var navigationIDs: [String] = []
+        var parsed: [ParsedSpace] = []
+        for dict in spacesArray {
             guard let managedID = dict["ManagedSpaceID"] as? Int, managedID > 0 else {
                 throw SpacesPlistError.malformedSpaceEntry
             }
+            navigationIDs.append(String(managedID))
+            // Only user desktops (`type == 0`; absent key ⇒ desktop) are
+            // Spaces to us — fullscreen tiles (`type == 4`) stay in the
+            // traversal order above but get no ordinal/name/menu row.
+            guard (dict["type"] as? Int ?? 0) == 0 else { continue }
             let uuid = (dict["uuid"] as? String) ?? ""
-            return ParsedSpace(id: String(managedID), ordinal: idx + 1, uuid: uuid)
+            parsed.append(ParsedSpace(id: String(managedID), ordinal: parsed.count + 1, uuid: uuid))
         }
         let activeID = (primary["Current Space"] as? [String: Any])?["ManagedSpaceID"] as? Int
-        return ParsedSpaces(spaces: parsed, activeID: activeID.map(String.init))
+        return ParsedSpaces(spaces: parsed, activeID: activeID.map(String.init),
+                            navigationIDs: navigationIDs)
     }
 }

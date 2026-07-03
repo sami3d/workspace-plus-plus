@@ -29,8 +29,8 @@ targets:
         # right values every time. Without these explicit pins it resets
         # `CFBundleShortVersionString` to "1.0" / `CFBundleVersion` to "1" on
         # every regenerate, silently dropping any committed version bump.
-        CFBundleShortVersionString: "0.1.7"
-        CFBundleVersion: "0.1.7"
+        CFBundleShortVersionString: "0.1.8"
+        CFBundleVersion: "0.1.8"
         LSUIElement: true
         NSSupportsAutomaticTermination: false
         NSSupportsSuddenTermination: false

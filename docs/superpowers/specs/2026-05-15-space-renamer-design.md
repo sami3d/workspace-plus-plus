@@ -120,6 +120,19 @@ Closes the `ManagedSpaceID`-drift limitation (#32, previously accepted as known)
 
 Verified on the real machine: all six live desktops' names and both recorded hotkeys moved to uuid keys (`primary` for Desktop 1) on first launch; stale entries untouched; flag set. Tests: parser uuid extraction + `storageID` sentinel rule, `migrateKeys` semantics (move, new-key-wins, unmapped-untouched, persistence), `didMigrateToUUIDKeys` round-trip.
 
+### Design Revision — 2026-07-03 (fullscreen-app spaces are not desktops: type filter + traversal order)
+
+Fixes the fullscreen-badge bug: entering a fullscreen app (e.g. a YouTube video) flashed a default-named banner over the video for ~1 s, and exiting left a stuck wrong-name banner on the desktop until the next space switch.
+
+**Root cause (real-machine evidence):** neither the SkyLight reader nor the plist parser filtered by space `type`. Fullscreening an app makes macOS create a transient `type = 4` tile space — captured live: `MSID=353 type=4 keys={…,TileLayoutManager,pid,fs_wid,…}` — **inserted mid-array right after the space it was entered from**, and it becomes the Current Space. The app treated it as a desktop: (a) the overlay manager created a banner window for it and flashed it on switch-in (symptom 1); (b) when macOS destroyed the tile on fullscreen-exit, that banner window — by then in always-visible non-active mode — was dumped onto the current desktop with no `activeSpaceDidChange` to trigger a re-sync, so it sat at full alpha showing "Desktop N" until the next manual space switch (symptom 2); (c) every desktop after the insertion point had its ordinal shifted by one while the tile existed.
+
+**Mechanism:**
+- `ParsedSpaces.spaces` now contains **user desktops only** (`type == 0`; absent key ⇒ desktop, keeping old fixtures/plists valid), with ordinals contiguous over desktops. Applied identically in `SkyLightActiveSpaceReader.snapshot()` and `SpacesPlistParser.parse`.
+- `ParsedSpaces` gains **`navigationIDs`** — the *full* MSID order including tiles (defaults to `spaces.map(\.id)` when not supplied). Rationale: Ctrl+←/→ ("Move left/right a space") hops *through* fullscreen tiles, so `RelativeArrowSpaceSwitcher` computes hop deltas from positions in `navigationIDs`, not desktop ordinals — otherwise hops across a tile would undershoot. This also keeps switching *out of* a fullscreen app working (the active id is the tile's MSID, absent from `spaces` but present in `navigationIDs`).
+- `activeID` is deliberately **not** remapped when the user is in a fullscreen tile: the menu-bar title falls back to the generic "Desktop", and all desktop banners are non-active (correct for Mission Control thumbnails). `CtrlDigitSpaceSwitcher` keeps desktop ordinals — the system "Switch to Desktop N" hotkeys count desktops only.
+
+Verified live: during fullscreen the snapshot shows 6 desktops + 1 tile with `Current Space` type 4; the desktops-only list never contains the tile, so no banner window is ever created for it — both symptoms are eliminated structurally (the overlay manager creates windows only for `spaces` entries). Tests: parser excludes type-4 from `spaces` with contiguous ordinals, includes it in `navigationIDs` in traversal order, preserves the tile `activeID`; arrow switcher counts the extra hop across a tile and switches out of a tile via traversal order.
+
 ## Architecture
 
 Six components, each owning one concern. All communicate via a small set of well-defined inputs/outputs; no shared mutable state.

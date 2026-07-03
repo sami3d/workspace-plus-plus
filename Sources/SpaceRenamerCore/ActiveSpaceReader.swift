@@ -39,15 +39,22 @@ public final class SkyLightActiveSpaceReader: ActiveSpaceReading {
         let displays = unmanaged.takeRetainedValue()
         guard let array = displays as? [[String: Any]], let primary = array.first else { return nil }
         let rawSpaces = (primary["Spaces"] as? [[String: Any]]) ?? []
-        var nextOrdinal = 0
-        let spaces: [ParsedSpace] = rawSpaces.compactMap { dict in
-            guard let msid = dict["ManagedSpaceID"] as? Int, msid > 0 else { return nil }
-            nextOrdinal += 1
+        var navigationIDs: [String] = []
+        var spaces: [ParsedSpace] = []
+        for dict in rawSpaces {
+            guard let msid = dict["ManagedSpaceID"] as? Int, msid > 0 else { continue }
+            navigationIDs.append(String(msid))
+            // User desktops only (`type == 0`; absent ⇒ desktop). Fullscreen
+            // tiles (`type == 4`) are transient, inserted mid-array, and not
+            // nameable — they stay in `navigationIDs` for Ctrl+arrow hop
+            // counting but must not become menu rows / overlay banners.
+            guard (dict["type"] as? Int ?? 0) == 0 else { continue }
             let uuid = (dict["uuid"] as? String) ?? ""
-            return ParsedSpace(id: String(msid), ordinal: nextOrdinal, uuid: uuid)
+            spaces.append(ParsedSpace(id: String(msid), ordinal: spaces.count + 1, uuid: uuid))
         }
         guard !spaces.isEmpty else { return nil }
         let activeMSID = (primary["Current Space"] as? [String: Any])?["ManagedSpaceID"] as? Int
-        return ParsedSpaces(spaces: spaces, activeID: activeMSID.map(String.init))
+        return ParsedSpaces(spaces: spaces, activeID: activeMSID.map(String.init),
+                            navigationIDs: navigationIDs)
     }
 }
