@@ -42,9 +42,10 @@ public final class RelativeArrowSpaceSwitcher: SpaceSwitching {
         // fullscreen tiles too, and the active space may *be* one (switching
         // out of a fullscreen app must still work).
         guard let snap = reader.snapshot(),
-              let activeID = snap.activeID,
-              let from = snap.navigationIDs.firstIndex(of: activeID),
-              let to = snap.navigationIDs.firstIndex(of: managedSpaceID) else {
+              let display = snap.display(containingSpaceID: managedSpaceID),
+              let activeID = display.activeID,
+              let from = display.navigationIDs.firstIndex(of: activeID),
+              let to = display.navigationIDs.firstIndex(of: managedSpaceID) else {
             return false
         }
 

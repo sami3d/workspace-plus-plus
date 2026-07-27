@@ -69,4 +69,24 @@ final class SpaceMonitorTests: XCTestCase {
         XCTAssertEqual(monitor.spaces.map { $0.id }, ["1", "7"])
         XCTAssertEqual(monitor.activeID, "7")
     }
+
+    func test_multipleDisplays_publishPerDisplayActiveState() throws {
+        let snap = ParsedSpaces(displays: [
+            ParsedDisplay(
+                id: "BUILT-IN", ordinal: 1,
+                spaces: [ParsedSpace(id: "1", ordinal: 1, displayID: "BUILT-IN")],
+                activeID: "1"
+            ),
+            ParsedDisplay(
+                id: "EXTERNAL", ordinal: 2,
+                spaces: [ParsedSpace(id: "9", ordinal: 1, displayID: "EXTERNAL")],
+                activeID: "9"
+            ),
+        ])
+        let monitor = SpaceMonitor(plistURL: try fixtureURL("spaces-3"),
+                                   activeSpaceReader: FakeActiveSpaceReader(snap))
+
+        XCTAssertEqual(monitor.displays.map(\.id), ["BUILT-IN", "EXTERNAL"])
+        XCTAssertEqual(monitor.activeIDsByDisplay, ["BUILT-IN": "1", "EXTERNAL": "9"])
+    }
 }

@@ -13,16 +13,42 @@ public struct ParsedSpace: Equatable {
     /// identity macOS itself keys per-desktop wallpapers by). Empty for the
     /// primary desktop.
     public let uuid: String
+    /// Stable managed-display identifier returned by SkyLight. This maps to
+    /// the CoreGraphics display UUID used by `NSScreen`.
+    public let displayID: String
 
     /// Restart-stable persistence key: the `uuid`, or the `"primary"` sentinel
-    /// for the primary desktop (whose uuid is empty). Names and per-desktop
-    /// hotkeys are stored under this.
-    public var storageID: String { uuid.isEmpty ? "primary" : uuid }
+    /// for the main display's primary desktop. A display-qualified fallback is
+    /// used for an empty UUID on any additional display.
+    public var storageID: String {
+        guard uuid.isEmpty else { return uuid }
+        return displayID == "Main" || displayID.isEmpty
+            ? "primary"
+            : "primary@\(displayID)"
+    }
 
-    public init(id: String, ordinal: Int, uuid: String = "") {
+    public init(id: String, ordinal: Int, uuid: String = "", displayID: String = "Main") {
         self.id = id
         self.ordinal = ordinal
         self.uuid = uuid
+        self.displayID = displayID
+    }
+}
+
+public struct ParsedDisplay: Equatable {
+    public let id: String
+    public let ordinal: Int
+    public let spaces: [ParsedSpace]
+    public let activeID: String?
+    public let navigationIDs: [String]
+
+    public init(id: String, ordinal: Int, spaces: [ParsedSpace],
+                activeID: String?, navigationIDs: [String]? = nil) {
+        self.id = id
+        self.ordinal = ordinal
+        self.spaces = spaces
+        self.activeID = activeID
+        self.navigationIDs = navigationIDs ?? spaces.map(\.id)
     }
 }
 
@@ -41,12 +67,38 @@ public struct ParsedSpaces: Equatable {
     /// fullscreen tiles. "Move left/right a space" hops through tiles, so the
     /// relative-arrow switcher must count them (and can navigate out of one).
     public let navigationIDs: [String]
+    /// Per-display snapshots in managed-display order.
+    public let displays: [ParsedDisplay]
 
     public init(spaces: [ParsedSpace], activeID: String?,
                 navigationIDs: [String]? = nil) {
         self.spaces = spaces
         self.activeID = activeID
         self.navigationIDs = navigationIDs ?? spaces.map { $0.id }
+        let displayID = spaces.first?.displayID ?? "Main"
+        self.displays = [
+            ParsedDisplay(id: displayID, ordinal: 1, spaces: spaces,
+                          activeID: activeID, navigationIDs: self.navigationIDs)
+        ]
+    }
+
+    public init(displays: [ParsedDisplay]) {
+        self.displays = displays
+        self.spaces = displays.flatMap(\.spaces)
+        self.activeID = displays.first?.activeID
+        self.navigationIDs = displays.first?.navigationIDs ?? []
+    }
+
+    public var activeIDsByDisplay: [String: String] {
+        Dictionary(uniqueKeysWithValues: displays.compactMap { display in
+            display.activeID.map { (display.id, $0) }
+        })
+    }
+
+    public func display(containingSpaceID id: String) -> ParsedDisplay? {
+        displays.first { display in
+            display.navigationIDs.contains(id)
+        }
     }
 }
 
@@ -63,28 +115,35 @@ public enum SpacesPlistParser {
               let managementData = config["Management Data"] as? [String: Any] else {
             throw SpacesPlistError.missingConfiguration
         }
-        // Primary monitor only; multi-display handling is tracked as a separate Phase B concern.
         guard let monitors = managementData["Monitors"] as? [[String: Any]],
-              let primary = monitors.first else {
+              !monitors.isEmpty else {
             throw SpacesPlistError.noMonitors
         }
-        let spacesArray = (primary["Spaces"] as? [[String: Any]]) ?? []
-        var navigationIDs: [String] = []
-        var parsed: [ParsedSpace] = []
-        for dict in spacesArray {
-            guard let managedID = dict["ManagedSpaceID"] as? Int, managedID > 0 else {
-                throw SpacesPlistError.malformedSpaceEntry
+        let displays = try monitors.enumerated().map { offset, monitor -> ParsedDisplay in
+            let displayID = (monitor["Display Identifier"] as? String) ?? "Display-\(offset + 1)"
+            let spacesArray = (monitor["Spaces"] as? [[String: Any]]) ?? []
+            var navigationIDs: [String] = []
+            var parsed: [ParsedSpace] = []
+            for dict in spacesArray {
+                guard let managedID = dict["ManagedSpaceID"] as? Int, managedID > 0 else {
+                    throw SpacesPlistError.malformedSpaceEntry
+                }
+                navigationIDs.append(String(managedID))
+                // Only user desktops (`type == 0`; absent key ⇒ desktop) are
+                // Spaces to us. Fullscreen tiles remain in traversal order.
+                guard (dict["type"] as? Int ?? 0) == 0 else { continue }
+                let uuid = (dict["uuid"] as? String) ?? ""
+                parsed.append(ParsedSpace(id: String(managedID),
+                                          ordinal: parsed.count + 1,
+                                          uuid: uuid,
+                                          displayID: displayID))
             }
-            navigationIDs.append(String(managedID))
-            // Only user desktops (`type == 0`; absent key ⇒ desktop) are
-            // Spaces to us — fullscreen tiles (`type == 4`) stay in the
-            // traversal order above but get no ordinal/name/menu row.
-            guard (dict["type"] as? Int ?? 0) == 0 else { continue }
-            let uuid = (dict["uuid"] as? String) ?? ""
-            parsed.append(ParsedSpace(id: String(managedID), ordinal: parsed.count + 1, uuid: uuid))
+            let activeID = (monitor["Current Space"] as? [String: Any])?["ManagedSpaceID"] as? Int
+            return ParsedDisplay(id: displayID, ordinal: offset + 1,
+                                 spaces: parsed,
+                                 activeID: activeID.map(String.init),
+                                 navigationIDs: navigationIDs)
         }
-        let activeID = (primary["Current Space"] as? [String: Any])?["ManagedSpaceID"] as? Int
-        return ParsedSpaces(spaces: parsed, activeID: activeID.map(String.init),
-                            navigationIDs: navigationIDs)
+        return ParsedSpaces(displays: displays)
     }
 }

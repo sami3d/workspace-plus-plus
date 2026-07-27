@@ -51,10 +51,13 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
                                      target: self, action: #selector(toggleOverlay(_:)))
         overlayToggle.state = names.showMissionControlOverlay ? .on : .off
 
+        let displayCol = NSTableColumn(identifier: .init("display"))
+        displayCol.title = "Monitor"; displayCol.width = 120
         let nameCol = NSTableColumn(identifier: .init("name"))
-        nameCol.title = "Desktop"; nameCol.width = 210
+        nameCol.title = "Desktop"; nameCol.width = 140
         let hotkeyCol = NSTableColumn(identifier: .init("hotkey"))
-        hotkeyCol.title = "Hotkey"; hotkeyCol.width = 230
+        hotkeyCol.title = "Hotkey"; hotkeyCol.width = 170
+        table.addTableColumn(displayCol)
         table.addTableColumn(nameCol)
         table.addTableColumn(hotkeyCol)
         table.dataSource = self
@@ -107,6 +110,10 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let space = monitor.spaces[row]
         switch tableColumn?.identifier.rawValue {
+        case "display":
+            let ordinal = monitor.displays.first(where: { $0.id == space.displayID })?.ordinal ?? 1
+            return NSTextField(labelWithString:
+                DisplayResolver.name(for: space.displayID, ordinal: ordinal))
         case "name":
             return NSTextField(labelWithString: names.name(for: space.storageID, defaultOrdinal: space.ordinal))
         case "hotkey":

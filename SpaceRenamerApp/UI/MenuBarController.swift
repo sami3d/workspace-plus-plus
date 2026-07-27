@@ -74,53 +74,24 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let reachable: Set<Int> = ctrlDigitMode
             ? SystemShortcutChecker.reachableSwitchToDesktopOrdinals() : []
 
-        // Column x for the (read-only) shortcut hint: just past the widest
-        // desktop name so all hints line up. Recomputed each open (titles vary).
-        let menuFont = NSFont.menuFont(ofSize: 0)
-        let widestName = monitor.spaces
-            .map { (names.name(for: $0.storageID, defaultOrdinal: $0.ordinal) as NSString)
-                .size(withAttributes: [.font: menuFont]).width }
-            .max() ?? 0
-        let shortcutTabX = ceil(widestName) + 36
-
-        for space in monitor.spaces {
-            let title = names.name(for: space.storageID, defaultOrdinal: space.ordinal)
-            let item = NSMenuItem(title: title, action: #selector(spaceClicked(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = space.id
-            if space.id == monitor.activeID { item.state = .on }
-            if ctrlDigitMode && !reachable.contains(space.ordinal) {
-                item.isEnabled = false
-                item.toolTip = space.ordinal > 9
-                    ? "Ctrl+1\u{2013}9 can\u{2019}t reach desktop \(space.ordinal). Switch to \u{201C}Move a space\u{201D} mode in Preferences."
-                    : "Enable \u{201C}Switch to Desktop \(space.ordinal)\u{201D} (Ctrl+\(space.ordinal)) in System Settings \u{2192} Keyboard \u{2192} Keyboard Shortcuts \u{2192} Mission Control, or use \u{201C}Move a space\u{201D} mode."
+        for (displayIndex, display) in monitor.displays.enumerated() {
+            if displayIndex > 0 {
+                menu.addItem(.separator())
             }
-            // Read-only hint of the per-desktop global hotkey (set in
-            // Preferences). Enabled rows only — disabled rows keep the plain
-            // title so AppKit's dimming isn't fought. Not a keyEquivalent, so
-            // the ⌥-Rename alternate pairing and global hotkeys are untouched.
-            if item.isEnabled,
-               let shortcut = KeyboardShortcuts.getShortcut(for: .space(space.storageID)) {
-                item.attributedTitle = shortcutHintTitle(name: title,
-                                                         shortcut: shortcut.description,
-                                                         font: menuFont,
-                                                         tabX: shortcutTabX)
-            }
-            menu.addItem(item)
-
-            // ⌥-held alternate row → rename (implemented in Task B3).
-            let renameAlt = NSMenuItem(title: "Rename \u{201C}\(title)\u{201D}\u{2026}",
-                                       action: #selector(renameClicked(_:)),
-                                       keyEquivalent: "")
-            renameAlt.target = self
-            renameAlt.representedObject = space.storageID  // names are stored by storageID
-            renameAlt.keyEquivalentModifierMask = .option
-            renameAlt.isAlternate = true
-            menu.addItem(renameAlt)
+            let displayName = DisplayResolver.name(for: display.id, ordinal: display.ordinal)
+            let displayItem = NSMenuItem(title: displayName, action: nil, keyEquivalent: "")
+            displayItem.isEnabled = false
+            menu.addItem(displayItem)
+            populateSpaces(display.spaces, in: menu,
+                           activeID: display.activeID,
+                           ctrlDigitMode: ctrlDigitMode,
+                           reachable: reachable)
         }
 
         if !monitor.spaces.isEmpty {
-            let hint = NSMenuItem(title: "Hold \u{2325} and click a desktop to rename", action: nil, keyEquivalent: "")
+            menu.addItem(.separator())
+            let hint = NSMenuItem(title: "Hold ⌥ and click a desktop to rename",
+                                  action: nil, keyEquivalent: "")
             hint.isEnabled = false
             menu.addItem(hint)
         }
@@ -139,6 +110,55 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let quit = NSMenuItem(title: "Quit Space Renamer", action: #selector(quitClicked), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
+    }
+
+    private func populateSpaces(_ spaces: [ParsedSpace], in targetMenu: NSMenu,
+                                activeID: String?, ctrlDigitMode: Bool,
+                                reachable: Set<Int>) {
+        let menuFont = NSFont.menuFont(ofSize: 0)
+        let widestName = spaces
+            .map { (names.name(for: $0.storageID, defaultOrdinal: $0.ordinal) as NSString)
+                .size(withAttributes: [.font: menuFont]).width }
+            .max() ?? 0
+        let shortcutTabX = ceil(widestName) + 36
+
+        for space in spaces {
+            let title = names.name(for: space.storageID, defaultOrdinal: space.ordinal)
+            let item = NSMenuItem(title: title, action: #selector(spaceClicked(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = space.id
+            item.indentationLevel = 1
+            if space.id == activeID { item.state = .on }
+            if ctrlDigitMode && !reachable.contains(space.ordinal) {
+                item.isEnabled = false
+                item.toolTip = space.ordinal > 9
+                    ? "Ctrl+1\u{2013}9 can\u{2019}t reach desktop \(space.ordinal). Switch to \u{201C}Move a space\u{201D} mode in Preferences."
+                    : "Enable \u{201C}Switch to Desktop \(space.ordinal)\u{201D} (Ctrl+\(space.ordinal)) in System Settings \u{2192} Keyboard \u{2192} Keyboard Shortcuts \u{2192} Mission Control, or use \u{201C}Move a space\u{201D} mode."
+            }
+            // Read-only hint of the per-desktop global hotkey (set in
+            // Preferences). Enabled rows only — disabled rows keep the plain
+            // title so AppKit's dimming isn't fought. Not a keyEquivalent, so
+            // the ⌥-Rename alternate pairing and global hotkeys are untouched.
+            if item.isEnabled,
+               let shortcut = KeyboardShortcuts.getShortcut(for: .space(space.storageID)) {
+                item.attributedTitle = shortcutHintTitle(name: title,
+                                                         shortcut: shortcut.description,
+                                                         font: menuFont,
+                                                         tabX: shortcutTabX)
+            }
+            targetMenu.addItem(item)
+
+            // ⌥-held alternate row → rename (implemented in Task B3).
+            let renameAlt = NSMenuItem(title: "Rename \u{201C}\(title)\u{201D}\u{2026}",
+                                       action: #selector(renameClicked(_:)),
+                                       keyEquivalent: "")
+            renameAlt.target = self
+            renameAlt.representedObject = space.storageID  // names are stored by storageID
+            renameAlt.keyEquivalentModifierMask = .option
+            renameAlt.isAlternate = true
+            renameAlt.indentationLevel = 1
+            targetMenu.addItem(renameAlt)
+        }
     }
 
     /// `name` left-aligned, `shortcut` in a muted aligned column at `tabX`.
@@ -161,7 +181,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func refreshTitle() {
-        if let activeID = monitor.activeID,
+        let pointerScreen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }
+        let pointerDisplayID = pointerScreen.flatMap(DisplayResolver.managedDisplayID(for:))
+        let preferredActiveID = pointerDisplayID.flatMap { monitor.activeIDsByDisplay[$0] }
+            ?? monitor.activeID
+        if let activeID = preferredActiveID,
            let active = monitor.spaces.first(where: { $0.id == activeID }) {
             statusItem.button?.title = names.name(for: active.storageID, defaultOrdinal: active.ordinal)
         } else if monitor.lastLoadError != nil {

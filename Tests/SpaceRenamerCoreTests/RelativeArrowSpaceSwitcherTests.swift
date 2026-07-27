@@ -120,4 +120,31 @@ final class RelativeArrowSpaceSwitcherTests: XCTestCase {
         XCTAssertFalse(makeSwitcher(reader, synth).setCurrentSpace(managedSpaceID: "132"))
         XCTAssertEqual(synth.keys.count, 2)   // only the first two landed
     }
+
+    func test_targetOnExternalDisplay_usesThatDisplaysActiveAndTraversalOrder() {
+        let reader = FakeReader()
+        reader.result = ParsedSpaces(displays: [
+            ParsedDisplay(
+                id: "BUILT-IN", ordinal: 1,
+                spaces: [
+                    ParsedSpace(id: "1", ordinal: 1, displayID: "BUILT-IN"),
+                    ParsedSpace(id: "2", ordinal: 2, displayID: "BUILT-IN"),
+                ],
+                activeID: "1"
+            ),
+            ParsedDisplay(
+                id: "EXTERNAL", ordinal: 2,
+                spaces: [
+                    ParsedSpace(id: "9", ordinal: 1, displayID: "EXTERNAL"),
+                    ParsedSpace(id: "10", ordinal: 2, displayID: "EXTERNAL"),
+                    ParsedSpace(id: "11", ordinal: 3, displayID: "EXTERNAL"),
+                ],
+                activeID: "9"
+            ),
+        ])
+        let synth = SpySynth()
+
+        XCTAssertTrue(makeSwitcher(reader, synth).setCurrentSpace(managedSpaceID: "11"))
+        XCTAssertEqual(synth.keys, [right, right])
+    }
 }
