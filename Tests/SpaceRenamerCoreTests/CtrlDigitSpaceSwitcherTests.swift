@@ -21,13 +21,23 @@ final class CtrlDigitSpaceSwitcherTests: XCTestCase {
         func postControlKey(_ keyCode: CGKeyCode) throws { keys.append(keyCode) }
     }
 
+    private final class SpyDisplayTargeter: DisplayTargeting {
+        var displayIDs: [String] = []
+        func perform(onManagedDisplayID displayID: String, action: () -> Bool) -> Bool {
+            displayIDs.append(displayID)
+            return action()
+        }
+    }
+
     private func snapshot(_ ids: [String]) -> ParsedSpaces {
         ParsedSpaces(spaces: ids.enumerated().map { ParsedSpace(id: $0.element, ordinal: $0.offset + 1) },
                      activeID: ids.first)
     }
 
-    private func make(_ r: FakeReader, _ s: SpySynth) -> CtrlDigitSpaceSwitcher {
-        CtrlDigitSpaceSwitcher(reader: r, synthesizer: s)
+    private func make(_ r: FakeReader, _ s: SpySynth,
+                      _ targeter: SpyDisplayTargeter = SpyDisplayTargeter())
+        -> CtrlDigitSpaceSwitcher {
+        CtrlDigitSpaceSwitcher(reader: r, synthesizer: s, displayTargeter: targeter)
     }
 
     func test_ordinalWithin1to9_postsControlDigit_returnsTrue() {
@@ -64,5 +74,30 @@ final class CtrlDigitSpaceSwitcherTests: XCTestCase {
         let r = FakeReader(); r.result = snapshot(["a","b","c"])
         let s = SpySynth(); s.throwOnDigit = true
         XCTAssertFalse(make(r, s).setCurrentSpace(managedSpaceID: "b"))
+    }
+
+    func test_targetOnExternalDisplay_targetsThatDisplay() {
+        let r = FakeReader()
+        r.result = ParsedSpaces(displays: [
+            ParsedDisplay(
+                id: "BUILT-IN", ordinal: 1,
+                spaces: [ParsedSpace(id: "1", ordinal: 1, displayID: "BUILT-IN")],
+                activeID: "1"
+            ),
+            ParsedDisplay(
+                id: "EXTERNAL", ordinal: 2,
+                spaces: [
+                    ParsedSpace(id: "9", ordinal: 1, displayID: "EXTERNAL"),
+                    ParsedSpace(id: "10", ordinal: 2, displayID: "EXTERNAL"),
+                ],
+                activeID: "9"
+            ),
+        ])
+        let s = SpySynth()
+        let targeter = SpyDisplayTargeter()
+
+        XCTAssertTrue(make(r, s, targeter).setCurrentSpace(managedSpaceID: "10"))
+        XCTAssertEqual(s.digits, [2])
+        XCTAssertEqual(targeter.displayIDs, ["EXTERNAL"])
     }
 }

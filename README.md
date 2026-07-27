@@ -21,7 +21,7 @@ A macOS menu-bar app to give Mission Control desktops custom names and switch to
   - **Shortcut mode (9 desktops max)** — `Ctrl+1`…`Ctrl+9` (the system "Switch to Desktop N" hotkeys), one instant keystroke per switch but only for desktops 1–9.
 - **⌥-click a desktop** in the menu to rename it.
 - **Mission Control overlay labels** *(on by default; disable in Preferences ▸ "Show name in Mission Control")*: each non-current desktop's thumbnail shows its custom name as a big banner; the active desktop flashes the banner briefly on switch-in and fades. (The active-Space thumbnail itself can appear without a banner — see *Known limitations* — this is a fundamental macOS constraint, not a bug.)
-- **Multi-display discovery and overlays**: Spaces are grouped under their physical monitor name, and each label window is created on and anchored to the display that owns its Space.
+- **Multi-display discovery, switching, and overlays**: Spaces are grouped under their physical monitor name, clicks and hotkeys target the monitor that owns the selected Space, and each label window is created on and anchored to that display.
 - **Launch at Login** toggle in Preferences.
 - Graceful UX when system prerequisites are missing (the menu greys unreachable rows in shortcut mode; the launch warning names the active mode's required shortcuts).
 
@@ -83,7 +83,7 @@ The full design — including rejected approaches (notably the SkyLight *write* 
 ## Known limitations
 
 - **Deleted-and-recreated desktops forget their name**: names are keyed by the space's persistent `uuid`, so they survive logout/restart — but removing a desktop and creating a new one in its place yields a new uuid (it *is* a new desktop), so the old name doesn't carry over. Names orphaned by `ManagedSpaceID` drift in versions before 0.1.7 can't be recovered automatically; rename once and it sticks from then on.
-- **Multi-display switching**: discovery, naming, grouping, and Mission Control overlays work across attached displays. Relative-arrow switching still follows the display macOS considers focused, so invoke a display's Space switch from that display's menu bar for predictable results.
+- **Multi-display switching briefly repositions the pointer**: macOS directs Mission Control shortcuts to the display containing the pointer. When switching a Space on another display, Space Renamer temporarily targets that display and restores the pointer to its original position after WindowServer accepts the shortcut.
 - **Shortcut mode** is hard-capped at 9 desktops — macOS only defines *Switch to Desktop 1–9*. Use the default arrow mode for >9.
 - **Multi-hop arrow switches** post one keystroke per ordinal step with a short pacing delay, so a far jump (e.g. desktop 1 → 11) takes ~1 second.
 - **Mission Control overlay — active-Space thumbnail**: when the overlay is enabled, the *currently-active* Space's thumbnail can render without a banner. The Mission Control thumbnail is a snapshot of the rendered Space, and the banner fades out on the active desktop so it doesn't obscure work — by the time the snapshot is taken the banner is already alpha 0. There's no public macOS signal for "Mission Control just opened" that's reliable enough to re-show the banner before the snapshot. All non-active thumbnails consistently show their banners.

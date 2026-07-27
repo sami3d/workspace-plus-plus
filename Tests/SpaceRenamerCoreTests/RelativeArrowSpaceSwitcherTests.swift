@@ -23,6 +23,14 @@ final class RelativeArrowSpaceSwitcherTests: XCTestCase {
         }
     }
 
+    private final class SpyDisplayTargeter: DisplayTargeting {
+        var displayIDs: [String] = []
+        func perform(onManagedDisplayID displayID: String, action: () -> Bool) -> Bool {
+            displayIDs.append(displayID)
+            return action()
+        }
+    }
+
     private let left = CGKeystrokeSynthesizer.leftArrowKeyCode    // 123
     private let right = CGKeystrokeSynthesizer.rightArrowKeyCode  // 124
 
@@ -33,8 +41,11 @@ final class RelativeArrowSpaceSwitcherTests: XCTestCase {
         return ParsedSpaces(spaces: spaces, activeID: active)
     }
 
-    private func makeSwitcher(_ reader: FakeReader, _ synth: SpySynth) -> RelativeArrowSpaceSwitcher {
-        RelativeArrowSpaceSwitcher(reader: reader, synthesizer: synth, pace: {})
+    private func makeSwitcher(_ reader: FakeReader, _ synth: SpySynth,
+                              _ targeter: SpyDisplayTargeter = SpyDisplayTargeter())
+        -> RelativeArrowSpaceSwitcher {
+        RelativeArrowSpaceSwitcher(reader: reader, synthesizer: synth,
+                                   displayTargeter: targeter, pace: {})
     }
 
     func test_forwardDelta_postsRightArrowThatManyTimes() {
@@ -143,8 +154,10 @@ final class RelativeArrowSpaceSwitcherTests: XCTestCase {
             ),
         ])
         let synth = SpySynth()
+        let targeter = SpyDisplayTargeter()
 
-        XCTAssertTrue(makeSwitcher(reader, synth).setCurrentSpace(managedSpaceID: "11"))
+        XCTAssertTrue(makeSwitcher(reader, synth, targeter).setCurrentSpace(managedSpaceID: "11"))
         XCTAssertEqual(synth.keys, [right, right])
+        XCTAssertEqual(targeter.displayIDs, ["EXTERNAL"])
     }
 }
