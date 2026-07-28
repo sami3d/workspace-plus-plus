@@ -1,0 +1,4 @@
+node_modules/
+assets/*.applescript
+assets/*.png
+raycast-env.d.ts

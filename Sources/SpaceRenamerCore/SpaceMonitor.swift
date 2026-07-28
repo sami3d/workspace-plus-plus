@@ -5,6 +5,8 @@ import os
 @MainActor public final class SpaceMonitor {
     @Published public private(set) var spaces: [ParsedSpace] = []
     @Published public private(set) var activeID: String?
+    @Published public private(set) var displays: [ParsedDisplay] = []
+    @Published public private(set) var activeIDsByDisplay: [String: String] = [:]
 
     /// `nil` when the last `reload()` succeeded. When non-nil, the most recent
     /// plist read/parse failed and `spaces`/`activeID` retain their previous
@@ -53,6 +55,8 @@ import os
         if let snap = activeReader.snapshot() {
             self.spaces = snap.spaces
             self.activeID = snap.activeID
+            self.displays = snap.displays
+            self.activeIDsByDisplay = snap.activeIDsByDisplay
             self.lastLoadError = nil
             return
         }
@@ -64,6 +68,8 @@ import os
             let parsed = try SpacesPlistParser.parse(plist)
             self.spaces = parsed.spaces
             self.activeID = parsed.activeID
+            self.displays = parsed.displays
+            self.activeIDsByDisplay = parsed.activeIDsByDisplay
             self.lastLoadError = nil
         } catch {
             let description = String(describing: error)

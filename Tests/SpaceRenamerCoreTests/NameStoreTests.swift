@@ -79,6 +79,22 @@ import XCTest
         XCTAssertEqual(NameStore(defaults: defaults).switchMode, .arrow)
     }
 
+    func test_menuBarDisplayMode_defaultsToPerDisplay() {
+        XCTAssertEqual(store.menuBarDisplayMode, .perDisplay)
+        XCTAssertEqual(MenuBarDisplayMode.default, .perDisplay)
+    }
+
+    func test_menuBarDisplayMode_roundTripsAcrossReconstruction() {
+        store.menuBarDisplayMode = .combined
+        let reborn = NameStore(defaults: defaults)
+        XCTAssertEqual(reborn.menuBarDisplayMode, .combined)
+    }
+
+    func test_menuBarDisplayMode_invalidStoredValue_fallsBackToDefault() {
+        defaults.set("bogus", forKey: "SpaceRenamer.menuBarDisplayMode")
+        XCTAssertEqual(NameStore(defaults: defaults).menuBarDisplayMode, .perDisplay)
+    }
+
     func test_migrateKeys_movesNamesToNewKeys() {
         store.setName("42", "Research")
         store.setName("7", "Email")

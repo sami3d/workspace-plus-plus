@@ -23,6 +23,14 @@ final class RelativeArrowSpaceSwitcherTests: XCTestCase {
         }
     }
 
+    private final class SpyDisplayTargeter: DisplayTargeting {
+        var displayIDs: [String] = []
+        func perform(onManagedDisplayID displayID: String, action: () -> Bool) -> Bool {
+            displayIDs.append(displayID)
+            return action()
+        }
+    }
+
     private let left = CGKeystrokeSynthesizer.leftArrowKeyCode    // 123
     private let right = CGKeystrokeSynthesizer.rightArrowKeyCode  // 124
 
@@ -33,8 +41,11 @@ final class RelativeArrowSpaceSwitcherTests: XCTestCase {
         return ParsedSpaces(spaces: spaces, activeID: active)
     }
 
-    private func makeSwitcher(_ reader: FakeReader, _ synth: SpySynth) -> RelativeArrowSpaceSwitcher {
-        RelativeArrowSpaceSwitcher(reader: reader, synthesizer: synth, pace: {})
+    private func makeSwitcher(_ reader: FakeReader, _ synth: SpySynth,
+                              _ targeter: SpyDisplayTargeter = SpyDisplayTargeter())
+        -> RelativeArrowSpaceSwitcher {
+        RelativeArrowSpaceSwitcher(reader: reader, synthesizer: synth,
+                                   displayTargeter: targeter, pace: {})
     }
 
     func test_forwardDelta_postsRightArrowThatManyTimes() {
@@ -119,5 +130,34 @@ final class RelativeArrowSpaceSwitcherTests: XCTestCase {
         let synth = SpySynth(); synth.throwAtCall = 3   // fail on the 3rd of 9 hops
         XCTAssertFalse(makeSwitcher(reader, synth).setCurrentSpace(managedSpaceID: "132"))
         XCTAssertEqual(synth.keys.count, 2)   // only the first two landed
+    }
+
+    func test_targetOnExternalDisplay_usesThatDisplaysActiveAndTraversalOrder() {
+        let reader = FakeReader()
+        reader.result = ParsedSpaces(displays: [
+            ParsedDisplay(
+                id: "BUILT-IN", ordinal: 1,
+                spaces: [
+                    ParsedSpace(id: "1", ordinal: 1, displayID: "BUILT-IN"),
+                    ParsedSpace(id: "2", ordinal: 2, displayID: "BUILT-IN"),
+                ],
+                activeID: "1"
+            ),
+            ParsedDisplay(
+                id: "EXTERNAL", ordinal: 2,
+                spaces: [
+                    ParsedSpace(id: "9", ordinal: 1, displayID: "EXTERNAL"),
+                    ParsedSpace(id: "10", ordinal: 2, displayID: "EXTERNAL"),
+                    ParsedSpace(id: "11", ordinal: 3, displayID: "EXTERNAL"),
+                ],
+                activeID: "9"
+            ),
+        ])
+        let synth = SpySynth()
+        let targeter = SpyDisplayTargeter()
+
+        XCTAssertTrue(makeSwitcher(reader, synth, targeter).setCurrentSpace(managedSpaceID: "11"))
+        XCTAssertEqual(synth.keys, [right, right])
+        XCTAssertEqual(targeter.displayIDs, ["EXTERNAL"])
     }
 }

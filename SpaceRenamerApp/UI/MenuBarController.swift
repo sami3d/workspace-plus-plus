@@ -12,6 +12,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let openPreferences: () -> Void
     private var cancellables: Set<AnyCancellable> = []
     private let menu = NSMenu()
+    private var perDisplayLabels: PerDisplayMenuBarLabelManager!
 
     init(monitor: SpaceMonitor,
          names: NameStore,
@@ -23,7 +24,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         self.switcher = switcher
         self.openPreferences = openPreferences
         super.init()
-        statusItem.button?.title = "Desktop"
+        setStatusTitle("Desktop")
         if let icon = NSImage(systemSymbolName: "display", accessibilityDescription: "Desktop") {
             icon.isTemplate = true                       // adapts to light/dark menu bar + highlight
             statusItem.button?.image = icon
@@ -37,10 +38,23 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // (disabled rows for unreachable / >9 desktops, the hint item).
         menu.autoenablesItems = false
         statusItem.menu = menu
+        perDisplayLabels = PerDisplayMenuBarLabelManager(statusItem: statusItem, menu: menu)
 
-        Publishers.CombineLatest3(monitor.$spaces, monitor.$activeID, monitor.$lastLoadError)
+        Publishers.CombineLatest3(
+            monitor.$spaces,
+            monitor.$activeIDsByDisplay,
+            monitor.$lastLoadError
+        )
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _, _, _ in self?.refreshTitle() }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .spaceRenamerMenuBarDisplayModeDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshTitle() }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .spaceRenamerNameDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshTitle() }
             .store(in: &cancellables)
         refreshTitle()
     }
@@ -49,7 +63,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// in Task B3). `performClick` TOGGLES: if the menu is already open this closes it —
     /// callers must NOT add extra open/closed state tracking around this.
     func openMenu() {
-        statusItem.button?.performClick(nil)
+        if perDisplayLabels.isEnabled {
+            perDisplayLabels.openMenu()
+        } else {
+            statusItem.button?.performClick(nil)
+        }
     }
 
     // MARK: - NSMenuDelegate
@@ -60,6 +78,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // Immediate title refresh; the Combine sink also fires later (async,
         // idempotent) from reload()'s @Published mutations.
         refreshTitle()
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        perDisplayLabels.setMenuHighlighted(true)
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        perDisplayLabels.setMenuHighlighted(false)
     }
 
     // MARK: - Private helpers
@@ -74,21 +100,61 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let reachable: Set<Int> = ctrlDigitMode
             ? SystemShortcutChecker.reachableSwitchToDesktopOrdinals() : []
 
-        // Column x for the (read-only) shortcut hint: just past the widest
-        // desktop name so all hints line up. Recomputed each open (titles vary).
+        for (displayIndex, display) in monitor.displays.enumerated() {
+            if displayIndex > 0 {
+                menu.addItem(.separator())
+            }
+            let displayName = DisplayResolver.name(for: display.id, ordinal: display.ordinal)
+            let displayItem = NSMenuItem(title: displayName, action: nil, keyEquivalent: "")
+            displayItem.isEnabled = false
+            menu.addItem(displayItem)
+            populateSpaces(display.spaces, in: menu,
+                           activeID: display.activeID,
+                           ctrlDigitMode: ctrlDigitMode,
+                           reachable: reachable)
+        }
+
+        if !monitor.spaces.isEmpty {
+            menu.addItem(.separator())
+            let hint = NSMenuItem(title: "Hold ⌥ and click a desktop to rename",
+                                  action: nil, keyEquivalent: "")
+            hint.isEnabled = false
+            menu.addItem(hint)
+        }
+
+        if monitor.lastLoadError != nil {
+            menu.addItem(.separator())
+            let warn = NSMenuItem(title: "⚠︎ Spaces unavailable — showing last known", action: nil, keyEquivalent: "")
+            warn.isEnabled = false
+            menu.addItem(warn)
+        }
+
+        menu.addItem(.separator())
+        let prefs = NSMenuItem(title: "Preferences…", action: #selector(prefsClicked), keyEquivalent: ",")
+        prefs.target = self
+        menu.addItem(prefs)
+        let quit = NSMenuItem(title: "Quit Workspace++", action: #selector(quitClicked), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
+    }
+
+    private func populateSpaces(_ spaces: [ParsedSpace], in targetMenu: NSMenu,
+                                activeID: String?, ctrlDigitMode: Bool,
+                                reachable: Set<Int>) {
         let menuFont = NSFont.menuFont(ofSize: 0)
-        let widestName = monitor.spaces
+        let widestName = spaces
             .map { (names.name(for: $0.storageID, defaultOrdinal: $0.ordinal) as NSString)
                 .size(withAttributes: [.font: menuFont]).width }
             .max() ?? 0
         let shortcutTabX = ceil(widestName) + 36
 
-        for space in monitor.spaces {
+        for space in spaces {
             let title = names.name(for: space.storageID, defaultOrdinal: space.ordinal)
             let item = NSMenuItem(title: title, action: #selector(spaceClicked(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = space.id
-            if space.id == monitor.activeID { item.state = .on }
+            item.indentationLevel = 1
+            if space.id == activeID { item.state = .on }
             if ctrlDigitMode && !reachable.contains(space.ordinal) {
                 item.isEnabled = false
                 item.toolTip = space.ordinal > 9
@@ -106,7 +172,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                                                          font: menuFont,
                                                          tabX: shortcutTabX)
             }
-            menu.addItem(item)
+            targetMenu.addItem(item)
 
             // ⌥-held alternate row → rename (implemented in Task B3).
             let renameAlt = NSMenuItem(title: "Rename \u{201C}\(title)\u{201D}\u{2026}",
@@ -116,29 +182,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             renameAlt.representedObject = space.storageID  // names are stored by storageID
             renameAlt.keyEquivalentModifierMask = .option
             renameAlt.isAlternate = true
-            menu.addItem(renameAlt)
+            renameAlt.indentationLevel = 1
+            targetMenu.addItem(renameAlt)
         }
-
-        if !monitor.spaces.isEmpty {
-            let hint = NSMenuItem(title: "Hold \u{2325} and click a desktop to rename", action: nil, keyEquivalent: "")
-            hint.isEnabled = false
-            menu.addItem(hint)
-        }
-
-        if monitor.lastLoadError != nil {
-            menu.addItem(.separator())
-            let warn = NSMenuItem(title: "⚠︎ Spaces unavailable — showing last known", action: nil, keyEquivalent: "")
-            warn.isEnabled = false
-            menu.addItem(warn)
-        }
-
-        menu.addItem(.separator())
-        let prefs = NSMenuItem(title: "Preferences…", action: #selector(prefsClicked), keyEquivalent: ",")
-        prefs.target = self
-        menu.addItem(prefs)
-        let quit = NSMenuItem(title: "Quit Space Renamer", action: #selector(quitClicked), keyEquivalent: "q")
-        quit.target = self
-        menu.addItem(quit)
     }
 
     /// `name` left-aligned, `shortcut` in a muted aligned column at `tabX`.
@@ -161,14 +207,38 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func refreshTitle() {
-        if let activeID = monitor.activeID,
-           let active = monitor.spaces.first(where: { $0.id == activeID }) {
-            statusItem.button?.title = names.name(for: active.storageID, defaultOrdinal: active.ordinal)
-        } else if monitor.lastLoadError != nil {
-            statusItem.button?.title = "\u{26A0}\u{FE0E} Desktop"
-        } else {
-            statusItem.button?.title = "Desktop"
+        let activeNames = monitor.displays.compactMap { display -> String? in
+            guard let activeID = monitor.activeIDsByDisplay[display.id],
+                  let active = display.spaces.first(where: { $0.id == activeID }) else {
+                return nil
+            }
+            return names.name(for: active.storageID, defaultOrdinal: active.ordinal)
         }
+
+        if names.menuBarDisplayMode == .perDisplay, monitor.displays.count > 1 {
+            perDisplayLabels.setEnabled(true)
+            perDisplayLabels.update(
+                displays: monitor.displays,
+                activeIDsByDisplay: monitor.activeIDsByDisplay,
+                names: names
+            )
+            return
+        }
+
+        perDisplayLabels.setEnabled(false)
+        statusItem.length = NSStatusItem.variableLength
+        if !activeNames.isEmpty {
+            setStatusTitle(activeNames.joined(separator: "  ·  "))
+        } else if monitor.lastLoadError != nil {
+            setStatusTitle("\u{26A0}\u{FE0E} Desktop")
+        } else {
+            setStatusTitle("Desktop")
+        }
+    }
+
+    private func setStatusTitle(_ title: String) {
+        guard let button = statusItem.button else { return }
+        button.attributedTitle = MenuBarTitleStyle.attributed(title, font: button.font)
     }
 
     @objc private func spaceClicked(_ sender: NSMenuItem) {
@@ -176,7 +246,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         do {
             try switcher.switch(to: id)
         } catch {
-            NSLog("Space Renamer: switch failed for \(id): \(error)")
+            NSLog("Workspace++: switch failed for \(id): \(error)")
         }
     }
 

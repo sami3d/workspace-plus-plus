@@ -7,6 +7,8 @@ public extension Notification.Name {
     /// re-query `name(for:defaultOrdinal:)` without coupling through specific
     /// UI controllers.
     static let spaceRenamerNameDidChange = Notification.Name("SpaceRenamer.nameDidChange")
+    static let spaceRenamerMenuBarDisplayModeDidChange =
+        Notification.Name("SpaceRenamer.menuBarDisplayModeDidChange")
 }
 
 @MainActor
@@ -19,6 +21,7 @@ public final class NameStore {
         static let switchMode = "SpaceRenamer.switchMode"     // SwitchMode.rawValue
         static let missionControlOverlay = "SpaceRenamer.showMissionControlOverlay"
         static let migratedToUUIDKeys = "SpaceRenamer.didMigrateToUUIDKeys"
+        static let menuBarDisplayMode = "SpaceRenamer.menuBarDisplayMode"
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -97,5 +100,21 @@ public final class NameStore {
             return defaults.bool(forKey: Key.missionControlOverlay)
         }
         set { defaults.set(newValue, forKey: Key.missionControlOverlay) }
+    }
+
+    /// How active Space names are represented when more than one display is
+    /// connected. Missing/invalid values use the per-display presentation.
+    public var menuBarDisplayMode: MenuBarDisplayMode {
+        get {
+            defaults.string(forKey: Key.menuBarDisplayMode)
+                .flatMap(MenuBarDisplayMode.init(rawValue:)) ?? .default
+        }
+        set {
+            defaults.set(newValue.rawValue, forKey: Key.menuBarDisplayMode)
+            NotificationCenter.default.post(
+                name: .spaceRenamerMenuBarDisplayModeDidChange,
+                object: nil
+            )
+        }
     }
 }

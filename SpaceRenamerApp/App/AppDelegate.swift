@@ -13,6 +13,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlay: SpaceLabelOverlayManager!
     private var prefs: PreferencesWindowController?
     private var spaceIDsObserver: AnyCancellable?
+    private var raycastSpaceObserver: AnyCancellable?
+    private var raycastNameObserver: NSObjectProtocol?
+    private var raycastSwitchRequests: RaycastSwitchRequestMonitor?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // The app persists to its own standard UserDefaults domain (keyed by the
@@ -59,12 +62,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                   let id = self.monitor.spaces.first(where: { $0.storageID == storageID })?.id
             else { return }
             do { try self.switcher.switch(to: id) }
-            catch { NSLog("Space Renamer: hotkey switch failed: \(error)") }
+            catch { NSLog("Workspace++: hotkey switch failed: \(error)") }
         }
         hotkeys.onOpenMenu = { [weak self] in self?.menuBar.openMenu() }
         spaceIDsObserver = monitor.$spaces
             .receive(on: DispatchQueue.main)
             .sink { [weak self] spaces in self?.hotkeys.sync(knownIDs: spaces.map { $0.storageID }) }
+
+        // Publish a live, stable-ID index for the local Raycast extension.
+        // Unlike the Mission Control menu bridge, this never opens UI or
+        // steals focus from Raycast.
+        raycastSpaceObserver = Publishers.CombineLatest(monitor.$spaces, monitor.$activeIDsByDisplay)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] spaces, activeIDs in
+                guard let self else { return }
+                RaycastSpaceIndex.write(spaces: spaces,
+                                        activeIDsByDisplay: activeIDs,
+                                        names: self.names)
+            }
+        raycastNameObserver = NotificationCenter.default.addObserver(
+            forName: .spaceRenamerNameDidChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.writeRaycastSpaceIndex() }
+        }
+        raycastSwitchRequests = RaycastSwitchRequestMonitor { [weak self] storageID in
+            self?.switchToRaycastStorageID(storageID)
+        }
 
         // Defer the first-run alerts off the synchronous launch path so the
         // status item appears first and the modal isn't the very first thing
@@ -76,6 +99,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {}
+
+    private func switchToRaycastStorageID(_ storageID: String) {
+        guard let managedSpaceID = monitor.spaces
+            .first(where: { $0.storageID == storageID })?.id else {
+            NSLog("Workspace++: Raycast requested unknown storage ID \(storageID)")
+            return
+        }
+        do {
+            try switcher.switch(to: managedSpaceID)
+        } catch {
+            NSLog("Workspace++: Raycast switch failed for \(storageID): \(error)")
+        }
+    }
+
+    private func writeRaycastSpaceIndex() {
+        RaycastSpaceIndex.write(spaces: monitor.spaces,
+                                activeIDsByDisplay: monitor.activeIDsByDisplay,
+                                names: names)
+    }
 
     private func showPreferences() {
         if prefs == nil {
@@ -101,7 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let alert = NSAlert()
         alert.messageText = "Grant Accessibility access"
-        alert.informativeText = "Space Renamer switches desktops by sending the macOS \u{201C}Switch to Desktop\u{201D} keyboard shortcut, which requires Accessibility permission. Enable \u{201C}SpaceRenamer\u{201D} under System Settings \u{2192} Privacy & Security \u{2192} Accessibility, then clicking a desktop will switch. (Ad-hoc development builds may need re-granting after a rebuild.)"
+        alert.informativeText = "Workspace++ switches desktops by sending the macOS \u{201C}Switch to Desktop\u{201D} keyboard shortcut, which requires Accessibility permission. Enable \u{201C}Workspace++\u{201D} under System Settings \u{2192} Privacy & Security \u{2192} Accessibility, then clicking a desktop will switch. (Ad-hoc development builds may need re-granting after a rebuild.)"
         alert.addButton(withTitle: "Open Accessibility Settings")
         alert.addButton(withTitle: "Later")
         NSApp.activate(ignoringOtherApps: true)
@@ -128,9 +170,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.messageText = "Enable Mission Control shortcuts"
         switch mode {
         case .arrow:
-            alert.informativeText = "Space Renamer switches desktops using the \u{201C}Move left a space\u{201D} and \u{201C}Move right a space\u{201D} keyboard shortcuts (Ctrl+\u{2190} / Ctrl+\u{2192}). Enable both in System Settings \u{2192} Keyboard \u{2192} Keyboard Shortcuts \u{2192} Mission Control, or clicking a desktop won\u{2019}t switch. (Or pick \u{201C}Switch to Desktop N\u{201D} mode in Preferences.)"
+            alert.informativeText = "Workspace++ switches desktops using the \u{201C}Move left a space\u{201D} and \u{201C}Move right a space\u{201D} keyboard shortcuts (Ctrl+\u{2190} / Ctrl+\u{2192}). Enable both in System Settings \u{2192} Keyboard \u{2192} Keyboard Shortcuts \u{2192} Mission Control, or clicking a desktop won\u{2019}t switch. (Or pick \u{201C}Switch to Desktop N\u{201D} mode in Preferences.)"
         case .ctrlDigit:
-            alert.informativeText = "Space Renamer is set to switch via the \u{201C}Switch to Desktop N\u{201D} shortcuts (Ctrl+1\u{2013}9). Enable them in System Settings \u{2192} Keyboard \u{2192} Keyboard Shortcuts \u{2192} Mission Control, or clicking a desktop won\u{2019}t switch. (Or pick \u{201C}Move a space\u{201D} mode in Preferences.)"
+            alert.informativeText = "Workspace++ is set to switch via the \u{201C}Switch to Desktop N\u{201D} shortcuts (Ctrl+1\u{2013}9). Enable them in System Settings \u{2192} Keyboard \u{2192} Keyboard Shortcuts \u{2192} Mission Control, or clicking a desktop won\u{2019}t switch. (Or pick \u{201C}Move a space\u{201D} mode in Preferences.)"
         }
         alert.addButton(withTitle: "Open Keyboard Settings")
         alert.addButton(withTitle: "Later")

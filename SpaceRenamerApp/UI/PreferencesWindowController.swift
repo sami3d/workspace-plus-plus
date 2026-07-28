@@ -21,7 +21,7 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
             contentRect: NSRect(x: 0, y: 0, width: 480, height: 500),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered, defer: false)
-        window.title = "Space Renamer Preferences"
+        window.title = "Workspace++ Preferences"
         super.init(window: window)
         setupContent()
         // Created at origin (0,0) — Cocoa's bottom-left. Center it on first
@@ -51,10 +51,27 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
                                      target: self, action: #selector(toggleOverlay(_:)))
         overlayToggle.state = names.showMissionControlOverlay ? .on : .off
 
+        let menuBarModeLabel = NSTextField(labelWithString: "Menu bar names:")
+        let menuBarModePopup = NSPopUpButton(frame: .zero, pullsDown: false)
+        menuBarModePopup.addItems(withTitles: [
+            "Each display separately",
+            "Combined on every display"
+        ])
+        menuBarModePopup.selectItem(at: names.menuBarDisplayMode == .perDisplay ? 0 : 1)
+        menuBarModePopup.target = self
+        menuBarModePopup.action = #selector(changeMenuBarDisplayMode(_:))
+        let menuBarModeRow = NSStackView(views: [menuBarModeLabel, menuBarModePopup])
+        menuBarModeRow.orientation = .horizontal
+        menuBarModeRow.alignment = .centerY
+        menuBarModeRow.spacing = 8
+
+        let displayCol = NSTableColumn(identifier: .init("display"))
+        displayCol.title = "Monitor"; displayCol.width = 120
         let nameCol = NSTableColumn(identifier: .init("name"))
-        nameCol.title = "Desktop"; nameCol.width = 210
+        nameCol.title = "Desktop"; nameCol.width = 140
         let hotkeyCol = NSTableColumn(identifier: .init("hotkey"))
-        hotkeyCol.title = "Hotkey"; hotkeyCol.width = 230
+        hotkeyCol.title = "Hotkey"; hotkeyCol.width = 170
+        table.addTableColumn(displayCol)
         table.addTableColumn(nameCol)
         table.addTableColumn(hotkeyCol)
         table.dataSource = self
@@ -68,7 +85,8 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
         scroll.borderType = .bezelBorder
 
         let stack = NSStackView(views: [openMenuLabel, openMenuRecorder, scroll,
-                                        shortcutToggle, overlayToggle, launchToggle])
+                                        menuBarModeRow, shortcutToggle,
+                                        overlayToggle, launchToggle])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
@@ -102,11 +120,19 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
         overlayChanged(on)   // AppDelegate calls overlay.setEnabled(on)
     }
 
+    @objc private func changeMenuBarDisplayMode(_ sender: NSPopUpButton) {
+        names.menuBarDisplayMode = sender.indexOfSelectedItem == 0 ? .perDisplay : .combined
+    }
+
     func numberOfRows(in tableView: NSTableView) -> Int { monitor.spaces.count }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let space = monitor.spaces[row]
         switch tableColumn?.identifier.rawValue {
+        case "display":
+            let ordinal = monitor.displays.first(where: { $0.id == space.displayID })?.ordinal ?? 1
+            return NSTextField(labelWithString:
+                DisplayResolver.name(for: space.displayID, ordinal: ordinal))
         case "name":
             return NSTextField(labelWithString: names.name(for: space.storageID, defaultOrdinal: space.ordinal))
         case "hotkey":

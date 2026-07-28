@@ -169,4 +169,40 @@ final class SpacesPlistParserTests: XCTestCase {
         // (>9 desktops are fully switchable since Design Revision 2026-05-17c;
         // no shortcut-availability cap remains on ParsedSpace.)
     }
+
+    func test_multipleDisplays_allSpacesParsedAndGrouped() throws {
+        let plist: [String: Any] = [
+            "SpacesDisplayConfiguration": [
+                "Management Data": [
+                    "Monitors": [
+                        [
+                            "Display Identifier": "BUILT-IN",
+                            "Current Space": ["ManagedSpaceID": 2],
+                            "Spaces": [
+                                ["ManagedSpaceID": 1, "uuid": "A"],
+                                ["ManagedSpaceID": 2, "uuid": "B"],
+                            ],
+                        ],
+                        [
+                            "Display Identifier": "EXTERNAL",
+                            "Current Space": ["ManagedSpaceID": 9],
+                            "Spaces": [
+                                ["ManagedSpaceID": 9, "uuid": "C"],
+                                ["ManagedSpaceID": 10, "uuid": "D"],
+                            ],
+                        ],
+                    ]
+                ]
+            ]
+        ]
+
+        let result = try SpacesPlistParser.parse(plist)
+        XCTAssertEqual(result.displays.map(\.id), ["BUILT-IN", "EXTERNAL"])
+        XCTAssertEqual(result.displays[0].spaces.map(\.id), ["1", "2"])
+        XCTAssertEqual(result.displays[1].spaces.map(\.id), ["9", "10"])
+        XCTAssertEqual(result.spaces.map(\.displayID),
+                       ["BUILT-IN", "BUILT-IN", "EXTERNAL", "EXTERNAL"])
+        XCTAssertEqual(result.activeIDsByDisplay,
+                       ["BUILT-IN": "2", "EXTERNAL": "9"])
+    }
 }

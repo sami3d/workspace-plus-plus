@@ -35,7 +35,7 @@ final class SpaceLabelOverlayManager {
         isEnabled = enabled
         if enabled {
             subscribe()
-            sync(spaces: monitor.spaces, activeID: monitor.activeID)
+            sync(spaces: monitor.spaces, activeIDsByDisplay: monitor.activeIDsByDisplay)
         } else {
             cancellables.removeAll()
             if let obs = nameChangeObserver {
@@ -47,10 +47,10 @@ final class SpaceLabelOverlayManager {
     }
 
     private func subscribe() {
-        Publishers.CombineLatest(monitor.$spaces, monitor.$activeID)
+        Publishers.CombineLatest(monitor.$spaces, monitor.$activeIDsByDisplay)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] spaces, activeID in
-                self?.sync(spaces: spaces, activeID: activeID)
+            .sink { [weak self] spaces, activeIDs in
+                self?.sync(spaces: spaces, activeIDsByDisplay: activeIDs)
             }
             .store(in: &cancellables)
 
@@ -73,7 +73,7 @@ final class SpaceLabelOverlayManager {
         }
     }
 
-    private func sync(spaces: [ParsedSpace], activeID: String?) {
+    private func sync(spaces: [ParsedSpace], activeIDsByDisplay: [String: String]) {
         let live = Set(spaces.map(\.id))
 
         // Tear down windows whose Space no longer exists.
@@ -82,14 +82,13 @@ final class SpaceLabelOverlayManager {
             windows.removeValue(forKey: id)
         }
 
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
-
         // Create / update windows for current Spaces. The active Space's
         // banner is transient (fades after a moment); the non-active windows
         // stay visible for the Mission Control thumbnails.
         for space in spaces {
+            guard let screen = DisplayResolver.screen(for: space.displayID) else { continue }
             let name = names.name(for: space.storageID, defaultOrdinal: space.ordinal)
-            let isActive = (space.id == activeID)
+            let isActive = (space.id == activeIDsByDisplay[space.displayID])
             if let window = windows[space.id] {
                 window.setName(name)
                 window.setIsActiveSpace(isActive)

@@ -24,15 +24,18 @@ public protocol SpaceSwitching {
 public final class RelativeArrowSpaceSwitcher: SpaceSwitching {
     private let reader: ActiveSpaceReading
     private let synthesizer: KeystrokeSynthesizing
+    private let displayTargeter: DisplayTargeting
     /// Pacing between consecutive arrow presses so the WindowServer animates
     /// each hop instead of coalescing them. Injectable so tests run instantly.
     private let pace: () -> Void
 
     public init(reader: ActiveSpaceReading = SkyLightActiveSpaceReader(),
                 synthesizer: KeystrokeSynthesizing = CGKeystrokeSynthesizer(),
+                displayTargeter: DisplayTargeting = CGDisplayTargeter(),
                 pace: @escaping () -> Void = { usleep(120_000) }) {
         self.reader = reader
         self.synthesizer = synthesizer
+        self.displayTargeter = displayTargeter
         self.pace = pace
     }
 
@@ -42,28 +45,31 @@ public final class RelativeArrowSpaceSwitcher: SpaceSwitching {
         // fullscreen tiles too, and the active space may *be* one (switching
         // out of a fullscreen app must still work).
         guard let snap = reader.snapshot(),
-              let activeID = snap.activeID,
-              let from = snap.navigationIDs.firstIndex(of: activeID),
-              let to = snap.navigationIDs.firstIndex(of: managedSpaceID) else {
+              let display = snap.display(containingSpaceID: managedSpaceID),
+              let activeID = display.activeID,
+              let from = display.navigationIDs.firstIndex(of: activeID),
+              let to = display.navigationIDs.firstIndex(of: managedSpaceID) else {
             return false
         }
 
         let delta = to - from
         guard delta != 0 else { return true }   // already on the target Space
 
-        let keyCode = delta > 0
-            ? CGKeystrokeSynthesizer.rightArrowKeyCode
-            : CGKeystrokeSynthesizer.leftArrowKeyCode
-        let steps = abs(delta)
-        for step in 1...steps {
-            do {
-                try synthesizer.postControlKey(keyCode)
-            } catch {
-                return false
+        return displayTargeter.perform(onManagedDisplayID: display.id) {
+            let keyCode = delta > 0
+                ? CGKeystrokeSynthesizer.rightArrowKeyCode
+                : CGKeystrokeSynthesizer.leftArrowKeyCode
+            let steps = abs(delta)
+            for step in 1...steps {
+                do {
+                    try synthesizer.postControlKey(keyCode)
+                } catch {
+                    return false
+                }
+                if step < steps { pace() }
             }
-            if step < steps { pace() }
+            return true
         }
-        return true
     }
 }
 
@@ -74,23 +80,30 @@ public final class RelativeArrowSpaceSwitcher: SpaceSwitching {
 public final class CtrlDigitSpaceSwitcher: SpaceSwitching {
     private let reader: ActiveSpaceReading
     private let synthesizer: KeystrokeSynthesizing
+    private let displayTargeter: DisplayTargeting
 
     public init(reader: ActiveSpaceReading = SkyLightActiveSpaceReader(),
-                synthesizer: KeystrokeSynthesizing = CGKeystrokeSynthesizer()) {
+                synthesizer: KeystrokeSynthesizing = CGKeystrokeSynthesizer(),
+                displayTargeter: DisplayTargeting = CGDisplayTargeter()) {
         self.reader = reader
         self.synthesizer = synthesizer
+        self.displayTargeter = displayTargeter
     }
 
     public func setCurrentSpace(managedSpaceID: String) -> Bool {
         guard let snap = reader.snapshot(),
-              let ordinal = snap.spaces.first(where: { $0.id == managedSpaceID })?.ordinal,
-              (1...9).contains(ordinal) else { return false }   // Ctrl+1…9 only
-        do {
-            try synthesizer.postControlDigit(ordinal)
-        } catch {
-            return false
+              let space = snap.spaces.first(where: { $0.id == managedSpaceID }),
+              let display = snap.display(containingSpaceID: managedSpaceID),
+              (1...9).contains(space.ordinal) else { return false }   // Ctrl+1…9 only
+        let ordinal = space.ordinal
+        return displayTargeter.perform(onManagedDisplayID: display.id) {
+            do {
+                try synthesizer.postControlDigit(ordinal)
+            } catch {
+                return false
+            }
+            return true
         }
-        return true
     }
 }
 

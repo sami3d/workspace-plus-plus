@@ -37,24 +37,31 @@ public final class SkyLightActiveSpaceReader: ActiveSpaceReading {
         // CGSCopy… returns a +1 retain; takeRetainedValue() hands it to ARC,
         // which releases it on scope exit regardless of the casts below.
         let displays = unmanaged.takeRetainedValue()
-        guard let array = displays as? [[String: Any]], let primary = array.first else { return nil }
-        let rawSpaces = (primary["Spaces"] as? [[String: Any]]) ?? []
-        var navigationIDs: [String] = []
-        var spaces: [ParsedSpace] = []
-        for dict in rawSpaces {
-            guard let msid = dict["ManagedSpaceID"] as? Int, msid > 0 else { continue }
-            navigationIDs.append(String(msid))
-            // User desktops only (`type == 0`; absent ⇒ desktop). Fullscreen
-            // tiles (`type == 4`) are transient, inserted mid-array, and not
-            // nameable — they stay in `navigationIDs` for Ctrl+arrow hop
-            // counting but must not become menu rows / overlay banners.
-            guard (dict["type"] as? Int ?? 0) == 0 else { continue }
-            let uuid = (dict["uuid"] as? String) ?? ""
-            spaces.append(ParsedSpace(id: String(msid), ordinal: spaces.count + 1, uuid: uuid))
+        guard let array = displays as? [[String: Any]], !array.isEmpty else { return nil }
+        let parsedDisplays = array.enumerated().map { offset, display -> ParsedDisplay in
+            let displayID = (display["Display Identifier"] as? String)
+                ?? (offset == 0 ? "Main" : "Display-\(offset + 1)")
+            let rawSpaces = (display["Spaces"] as? [[String: Any]]) ?? []
+            var navigationIDs: [String] = []
+            var spaces: [ParsedSpace] = []
+            for dict in rawSpaces {
+                guard let msid = dict["ManagedSpaceID"] as? Int, msid > 0 else { continue }
+                navigationIDs.append(String(msid))
+                // User desktops only (`type == 0`; absent ⇒ desktop).
+                guard (dict["type"] as? Int ?? 0) == 0 else { continue }
+                let uuid = (dict["uuid"] as? String) ?? ""
+                spaces.append(ParsedSpace(id: String(msid),
+                                          ordinal: spaces.count + 1,
+                                          uuid: uuid,
+                                          displayID: displayID))
+            }
+            let activeMSID = (display["Current Space"] as? [String: Any])?["ManagedSpaceID"] as? Int
+            return ParsedDisplay(id: displayID, ordinal: offset + 1,
+                                 spaces: spaces,
+                                 activeID: activeMSID.map(String.init),
+                                 navigationIDs: navigationIDs)
         }
-        guard !spaces.isEmpty else { return nil }
-        let activeMSID = (primary["Current Space"] as? [String: Any])?["ManagedSpaceID"] as? Int
-        return ParsedSpaces(spaces: spaces, activeID: activeMSID.map(String.init),
-                            navigationIDs: navigationIDs)
+        guard parsedDisplays.contains(where: { !$0.spaces.isEmpty }) else { return nil }
+        return ParsedSpaces(displays: parsedDisplays)
     }
 }
