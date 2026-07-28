@@ -2,9 +2,40 @@
 
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Versioning is [SemVer](https://semver.org/)-ish (`0.1.x` while pre-1.0).
+Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [1.0.0] — 2026-07-28
+
+### Added
+- **Workspace++ public product identity** across the macOS app, Raycast
+  extension, documentation, iconography, installer, and GitHub project.
+- **Dynamic Raycast search** backed by a live local index. Space names,
+  additions, removals, active state, and physical display names update without
+  manual Raycast configuration.
+- **Per-display menu-bar mode** with one independently sized active Space label
+  on each monitor.
+- **Combined menu-bar mode** for users who prefer all active display names in a
+  single native status item.
+- **One-command source installer** that builds and installs Workspace++ and
+  imports the Raycast extension when its prerequisites are available.
+
+### Changed
+- Active Space names use a sky-blue menu-bar treatment.
+- Multi-display parsing and switching tolerate the additional managed-display
+  shapes observed on current macOS releases.
+- The app is presented as `Workspace++.app` while retaining the historical
+  bundle ID, defaults keys, local bridge paths, and Swift module names for
+  upgrade compatibility.
+
+### Fixed
+- Per-display labels no longer share the longest display's width.
+- Removed the invisible native status-item slot that caused excess trailing
+  space and intercepted clicks.
+- Per-display controls now consume AppKit's hidden 16-point scene-host slot,
+  align exactly with the next native menu-bar item, and accept the first click
+  from a non-activating panel.
 
 ## [0.1.8] — 2026-07-03
 

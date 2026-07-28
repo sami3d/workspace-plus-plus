@@ -9,7 +9,8 @@
 ### Verification
 
 - [ ] `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test` — passes locally
-- [ ] App builds Release via `xcodegen generate` + `xcodebuild` against the `SpaceRenamer Dev` keychain identity
+- [ ] Workspace++ builds Release via `xcodegen generate` + `xcodebuild`
+- [ ] `cd RaycastExtension && npm run lint && npm run build` passes when Raycast code changed
 - [ ] Manually smoke-tested on macOS (state which version and what scenario)
 
 ### Design impact

@@ -56,3 +56,20 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             build
+
+  raycast-extension:
+    name: Raycast extension
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: RaycastExtension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: RaycastExtension/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

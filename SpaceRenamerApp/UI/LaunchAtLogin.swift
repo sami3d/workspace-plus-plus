@@ -12,7 +12,7 @@ enum LaunchAtLogin {
                     try SMAppService.mainApp.unregister()
                 }
             } catch {
-                NSLog("Space Renamer: LaunchAtLogin toggle failed: \(error)")
+                NSLog("Workspace++: LaunchAtLogin toggle failed: \(error)")
             }
         }
     }

@@ -5,7 +5,7 @@ import Cocoa
 // app (the app ran a delegate-less NSApplication and did nothing), so we own
 // the bootstrap here on the main actor and wire the delegate manually.
 @main
-enum SpaceRenamerMain {
+enum WorkspacePlusPlusMain {
     @MainActor
     static func main() {
         let app = NSApplication.shared

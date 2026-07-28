@@ -39,7 +39,8 @@ public final class SkyLightActiveSpaceReader: ActiveSpaceReading {
         let displays = unmanaged.takeRetainedValue()
         guard let array = displays as? [[String: Any]], !array.isEmpty else { return nil }
         let parsedDisplays = array.enumerated().map { offset, display -> ParsedDisplay in
-            let displayID = (display["Display Identifier"] as? String) ?? "Display-\(offset + 1)"
+            let displayID = (display["Display Identifier"] as? String)
+                ?? (offset == 0 ? "Main" : "Display-\(offset + 1)")
             let rawSpaces = (display["Spaces"] as? [[String: Any]]) ?? []
             var navigationIDs: [String] = []
             var spaces: [ParsedSpace] = []

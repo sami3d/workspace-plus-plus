@@ -1,10 +1,10 @@
-# Contributing
+# Contributing to Workspace++
 
 Thanks for considering a contribution.
 
 ## Dev setup
 
-- macOS 13+, Xcode 15+.
+- macOS 13+, Xcode 16+.
 - [xcodegen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`.
 - A stable self-signed code-signing identity in your login keychain: `./scripts/create-signing-cert.sh` (run once per machine). This is required even for development: ad-hoc signing produces no stable Designated Requirement, so macOS TCC won't honor the Accessibility grant the app needs to synthesize switch keystrokes, and switching will silently fail.
 
@@ -15,7 +15,7 @@ xcodegen generate
 DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
   xcodebuild -project SpaceRenamer.xcodeproj -scheme SpaceRenamer \
              -configuration Debug -destination 'platform=macOS' build
-open ~/Library/Developer/Xcode/DerivedData/SpaceRenamer-*/Build/Products/Debug/SpaceRenamer.app
+open ~/Library/Developer/Xcode/DerivedData/SpaceRenamer-*/Build/Products/Debug/Workspace++.app
 ```
 
 Always launch via `open` (or by double-clicking the `.app`) — exec'ing the binary directly poisons TCC attribution (the responsible process becomes your terminal), and Accessibility checks return `false` confusingly.
@@ -40,6 +40,11 @@ Follow the existing patterns in the codebase:
 - **`SpaceRenamerApp/`** is the Xcode app target — `AppDelegate`, `MenuBarController`, `PreferencesWindowController`, `HotkeyManager`. It depends on the local `SpaceRenamerCore` package.
 - Match the comment density and naming of surrounding code.
 
+The historical internal names (`SpaceRenamer`, `SpaceRenamerCore`,
+`com.saint.SpaceRenamer`, and the `Space Renamer` Application Support folder)
+are compatibility boundaries, not unfinished branding. See
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) before changing them.
+
 ## Design changes
 
 The design spec lives at [`docs/superpowers/specs/2026-05-15-space-renamer-design.md`](docs/superpowers/specs/2026-05-15-space-renamer-design.md). It records decisions (D1–D9) and revisions chronologically, including rejected approaches with the real-machine evidence that ruled them out.
@@ -50,11 +55,16 @@ Non-trivial behavioral changes should record a similar dated "Design Revision YY
 
 - Short imperative subject (e.g. `feat: …`, `fix: …`, `docs: …`, `ci: …`).
 - Reference an issue/PR number where applicable (`#N`).
-- This project uses AI-assisted development; commits authored with that assistance carry a `Co-Authored-By: Claude` trailer. Human-only contributions don't need one.
+- If AI materially assisted a contribution, disclose it in the pull request
+  description according to the contributor's tooling and organization policy.
 
 ## Bundle identifier
 
-If you fork and ship under your own namespace, change `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml` and regenerate the project. macOS TCC keys Accessibility grants by bundle ID, so a fork with a different bundle ID needs its own grant.
+Workspace++ intentionally keeps the upstream bundle identifier so upgrades
+retain settings and Accessibility approval. A differently branded fork may
+change `PRODUCT_BUNDLE_IDENTIFIER` in `project.yml`, but must also migrate
+defaults, local bridge paths, Launch at Login state, and document that macOS
+will require a fresh Accessibility grant.
 
 ## Reporting issues
 

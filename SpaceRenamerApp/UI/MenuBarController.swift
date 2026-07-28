@@ -12,6 +12,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let openPreferences: () -> Void
     private var cancellables: Set<AnyCancellable> = []
     private let menu = NSMenu()
+    private var perDisplayLabels: PerDisplayMenuBarLabelManager!
 
     init(monitor: SpaceMonitor,
          names: NameStore,
@@ -23,7 +24,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         self.switcher = switcher
         self.openPreferences = openPreferences
         super.init()
-        statusItem.button?.title = "Desktop"
+        setStatusTitle("Desktop")
         if let icon = NSImage(systemSymbolName: "display", accessibilityDescription: "Desktop") {
             icon.isTemplate = true                       // adapts to light/dark menu bar + highlight
             statusItem.button?.image = icon
@@ -37,10 +38,23 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // (disabled rows for unreachable / >9 desktops, the hint item).
         menu.autoenablesItems = false
         statusItem.menu = menu
+        perDisplayLabels = PerDisplayMenuBarLabelManager(statusItem: statusItem, menu: menu)
 
-        Publishers.CombineLatest3(monitor.$spaces, monitor.$activeID, monitor.$lastLoadError)
+        Publishers.CombineLatest3(
+            monitor.$spaces,
+            monitor.$activeIDsByDisplay,
+            monitor.$lastLoadError
+        )
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _, _, _ in self?.refreshTitle() }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .spaceRenamerMenuBarDisplayModeDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshTitle() }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .spaceRenamerNameDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshTitle() }
             .store(in: &cancellables)
         refreshTitle()
     }
@@ -49,7 +63,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// in Task B3). `performClick` TOGGLES: if the menu is already open this closes it —
     /// callers must NOT add extra open/closed state tracking around this.
     func openMenu() {
-        statusItem.button?.performClick(nil)
+        if perDisplayLabels.isEnabled {
+            perDisplayLabels.openMenu()
+        } else {
+            statusItem.button?.performClick(nil)
+        }
     }
 
     // MARK: - NSMenuDelegate
@@ -60,6 +78,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         // Immediate title refresh; the Combine sink also fires later (async,
         // idempotent) from reload()'s @Published mutations.
         refreshTitle()
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        perDisplayLabels.setMenuHighlighted(true)
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        perDisplayLabels.setMenuHighlighted(false)
     }
 
     // MARK: - Private helpers
@@ -107,7 +133,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let prefs = NSMenuItem(title: "Preferences…", action: #selector(prefsClicked), keyEquivalent: ",")
         prefs.target = self
         menu.addItem(prefs)
-        let quit = NSMenuItem(title: "Quit Space Renamer", action: #selector(quitClicked), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit Workspace++", action: #selector(quitClicked), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
     }
@@ -181,18 +207,38 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func refreshTitle() {
-        let pointerScreen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) }
-        let pointerDisplayID = pointerScreen.flatMap(DisplayResolver.managedDisplayID(for:))
-        let preferredActiveID = pointerDisplayID.flatMap { monitor.activeIDsByDisplay[$0] }
-            ?? monitor.activeID
-        if let activeID = preferredActiveID,
-           let active = monitor.spaces.first(where: { $0.id == activeID }) {
-            statusItem.button?.title = names.name(for: active.storageID, defaultOrdinal: active.ordinal)
-        } else if monitor.lastLoadError != nil {
-            statusItem.button?.title = "\u{26A0}\u{FE0E} Desktop"
-        } else {
-            statusItem.button?.title = "Desktop"
+        let activeNames = monitor.displays.compactMap { display -> String? in
+            guard let activeID = monitor.activeIDsByDisplay[display.id],
+                  let active = display.spaces.first(where: { $0.id == activeID }) else {
+                return nil
+            }
+            return names.name(for: active.storageID, defaultOrdinal: active.ordinal)
         }
+
+        if names.menuBarDisplayMode == .perDisplay, monitor.displays.count > 1 {
+            perDisplayLabels.setEnabled(true)
+            perDisplayLabels.update(
+                displays: monitor.displays,
+                activeIDsByDisplay: monitor.activeIDsByDisplay,
+                names: names
+            )
+            return
+        }
+
+        perDisplayLabels.setEnabled(false)
+        statusItem.length = NSStatusItem.variableLength
+        if !activeNames.isEmpty {
+            setStatusTitle(activeNames.joined(separator: "  ·  "))
+        } else if monitor.lastLoadError != nil {
+            setStatusTitle("\u{26A0}\u{FE0E} Desktop")
+        } else {
+            setStatusTitle("Desktop")
+        }
+    }
+
+    private func setStatusTitle(_ title: String) {
+        guard let button = statusItem.button else { return }
+        button.attributedTitle = MenuBarTitleStyle.attributed(title, font: button.font)
     }
 
     @objc private func spaceClicked(_ sender: NSMenuItem) {
@@ -200,7 +246,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         do {
             try switcher.switch(to: id)
         } catch {
-            NSLog("Space Renamer: switch failed for \(id): \(error)")
+            NSLog("Workspace++: switch failed for \(id): \(error)")
         }
     }
 

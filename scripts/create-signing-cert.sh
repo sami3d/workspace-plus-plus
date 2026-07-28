@@ -1,6 +1,8 @@
 #!/bin/sh
-# Recreate the local self-signed code-signing identity that project.yml uses
-# (CODE_SIGN_IDENTITY "SpaceRenamer Dev"). Required so the macOS Accessibility
+# Create the compatibility signing identity that Workspace++ project.yml uses
+# (CODE_SIGN_IDENTITY "SpaceRenamer Dev"). The historical name is intentional:
+# existing local builds retain the same designated requirement. Required so
+# macOS Accessibility
 # (TCC) grant survives rebuilds: ad-hoc signing has no stable Designated
 # Requirement, so TCC never honors the grant and synthesized desktop switches
 # are silently dropped. Run once on a machine/keychain that lacks the identity,
@@ -13,6 +15,12 @@ if security find-identity -p codesigning | grep -q "$NAME"; then
 fi
 OSSL="$(command -v /opt/homebrew/bin/openssl || command -v openssl)"
 WORK="$(mktemp -d)"
+cleanup() {
+  if [ -n "${WORK:-}" ] && [ -d "$WORK" ]; then
+    rm -r -- "$WORK"
+  fi
+}
+trap cleanup EXIT HUP INT TERM
 cat > "$WORK/v3.cnf" <<EOF
 [ req ]
 distinguished_name = dn
@@ -31,5 +39,4 @@ EOF
   -inkey "$WORK/k.pem" -in "$WORK/c.pem" -out "$WORK/id.p12" -passout pass:srdev -name "$NAME"
 security import "$WORK/id.p12" -k "$HOME/Library/Keychains/login.keychain-db" \
   -P srdev -A -T /usr/bin/codesign
-rm -rf "$WORK"
 echo "Created code-signing identity '$NAME'. Now run: xcodegen generate && build."

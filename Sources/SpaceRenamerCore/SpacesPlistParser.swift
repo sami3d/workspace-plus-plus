@@ -120,7 +120,8 @@ public enum SpacesPlistParser {
             throw SpacesPlistError.noMonitors
         }
         let displays = try monitors.enumerated().map { offset, monitor -> ParsedDisplay in
-            let displayID = (monitor["Display Identifier"] as? String) ?? "Display-\(offset + 1)"
+            let displayID = (monitor["Display Identifier"] as? String)
+                ?? (offset == 0 ? "Main" : "Display-\(offset + 1)")
             let spacesArray = (monitor["Spaces"] as? [[String: Any]]) ?? []
             var navigationIDs: [String] = []
             var parsed: [ParsedSpace] = []
