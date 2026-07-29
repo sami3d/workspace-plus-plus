@@ -10,6 +10,10 @@ public extension Notification.Name {
     /// Posted whenever a workspace's stored banner colour changes. Userinfo
     /// `["id": String]` carries the stable `ParsedSpace.storageID`.
     static let spaceRenamerColorDidChange = Notification.Name("SpaceRenamer.colorDidChange")
+    /// Posted when the Mission Control label layout or background opacity
+    /// changes. Subscribers should rebuild the anchored overlay windows.
+    static let spaceRenamerOverlayAppearanceDidChange =
+        Notification.Name("SpaceRenamer.overlayAppearanceDidChange")
     static let spaceRenamerMenuBarDisplayModeDidChange =
         Notification.Name("SpaceRenamer.menuBarDisplayModeDidChange")
 }
@@ -24,6 +28,8 @@ public final class NameStore {
         static let warned = "SpaceRenamer.didWarnSystemShortcuts"
         static let switchMode = "SpaceRenamer.switchMode"     // SwitchMode.rawValue
         static let missionControlOverlay = "SpaceRenamer.showMissionControlOverlay"
+        static let overlayShowsAppWindows = "SpaceRenamer.overlayShowsAppWindows"
+        static let overlayBackgroundOpacity = "SpaceRenamer.overlayBackgroundOpacity"
         static let migratedToUUIDKeys = "SpaceRenamer.didMigrateToUUIDKeys"
         static let menuBarDisplayMode = "SpaceRenamer.menuBarDisplayMode"
     }
@@ -149,6 +155,47 @@ public final class NameStore {
             return defaults.bool(forKey: Key.missionControlOverlay)
         }
         set { defaults.set(newValue, forKey: Key.missionControlOverlay) }
+    }
+
+    /// When true, the colour is confined to a centered band so Mission Control
+    /// can still show the workspace's app windows. Missing key defaults on.
+    public var overlayShowsAppWindows: Bool {
+        get {
+            if defaults.object(forKey: Key.overlayShowsAppWindows) == nil {
+                return true
+            }
+            return defaults.bool(forKey: Key.overlayShowsAppWindows)
+        }
+        set {
+            defaults.set(newValue, forKey: Key.overlayShowsAppWindows)
+            NotificationCenter.default.post(
+                name: .spaceRenamerOverlayAppearanceDidChange,
+                object: nil
+            )
+        }
+    }
+
+    /// Opacity of the coloured background only. Text always remains fully
+    /// opaque. Missing key defaults to 70 percent.
+    public var overlayBackgroundOpacity: Double {
+        get {
+            guard defaults.object(forKey: Key.overlayBackgroundOpacity) != nil else {
+                return 0.70
+            }
+            return min(1, max(0.10, defaults.double(
+                forKey: Key.overlayBackgroundOpacity
+            )))
+        }
+        set {
+            defaults.set(
+                min(1, max(0.10, newValue)),
+                forKey: Key.overlayBackgroundOpacity
+            )
+            NotificationCenter.default.post(
+                name: .spaceRenamerOverlayAppearanceDidChange,
+                object: nil
+            )
+        }
     }
 
     /// How active Space names are represented when more than one display is

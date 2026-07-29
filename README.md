@@ -75,6 +75,12 @@ second list of names.
 - Per-Space overlay windows are anchored to the correct physical display.
 - Give each workspace its own banner colour in Preferences; label text adjusts
   automatically for contrast.
+- Choose whether Mission Control keeps app windows visible behind a centred
+  name band or uses a full-screen colour wash, and adjust background opacity
+  independently from the fully opaque text.
+- A Preferences legend documents the shared colour convention: Work (blue),
+  Hobby (pink), Empty screens (green), Mixed (grey), Unsorted windows (red),
+  and Personal tasks (brown).
 
 ### Flexible switching engine
 
@@ -90,7 +96,7 @@ second list of names.
 - Live display names and active-state checkmarks.
 - Helpful warnings when required Mission Control shortcuts or Accessibility
   permission are missing.
-- 86 fast core tests plus CI builds for the AppKit app and Raycast extension.
+- 89 fast core tests plus CI builds for the AppKit app and Raycast extension.
 
 ## Requirements
 
@@ -142,6 +148,7 @@ updates.
    - switching mode;
    - Mission Control labels;
    - a background colour for each workspace label;
+   - whether app windows remain visible and the name-background opacity;
    - global shortcuts;
    - the Move Focused Window picker shortcut;
    - Launch at Login.

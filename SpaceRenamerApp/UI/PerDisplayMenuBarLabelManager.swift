@@ -349,7 +349,15 @@ final class PerDisplayMenuBarLabelManager: NSObject {
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.level = .statusBar
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        // `.transient` keeps this menu-bar replacement out of Mission Control.
+        // The per-Space label windows intentionally omit it because those
+        // windows are the names rendered inside the workspace thumbnails.
+        panel.collectionBehavior = [
+            .canJoinAllSpaces,
+            .stationary,
+            .transient,
+            .ignoresCycle
+        ]
         panel.hidesOnDeactivate = false
         panel.ignoresMouseEvents = false
 

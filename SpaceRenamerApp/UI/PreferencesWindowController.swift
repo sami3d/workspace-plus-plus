@@ -14,6 +14,14 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
     private let table = NSTableView()
     private let openMenuRecorder = KeyboardShortcuts.RecorderCocoa(for: .openMenu)
     private let moveWindowRecorder = KeyboardShortcuts.RecorderCocoa(for: .moveFocusedWindow)
+    private let opacitySlider = NSSlider(
+        value: 0.70,
+        minValue: 0.10,
+        maxValue: 1.0,
+        target: nil,
+        action: nil
+    )
+    private let opacityValueLabel = NSTextField(labelWithString: "70%")
     private let overlayChanged: (Bool) -> Void
     private var cancellables: Set<AnyCancellable> = []
 
@@ -23,7 +31,7 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
         self.names = names
         self.overlayChanged = overlayChanged
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 520),
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 660),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered, defer: false)
         window.title = "Workspace++ Preferences"
@@ -65,6 +73,29 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
                                      target: self, action: #selector(toggleOverlay(_:)))
         overlayToggle.state = names.showMissionControlOverlay ? .on : .off
 
+        let appWindowsToggle = NSButton(
+            checkboxWithTitle: "Show app windows behind workspace name",
+            target: self,
+            action: #selector(toggleOverlayAppWindows(_:))
+        )
+        appWindowsToggle.state = names.overlayShowsAppWindows ? .on : .off
+
+        let opacityLabel = NSTextField(labelWithString: "Name background opacity:")
+        opacitySlider.doubleValue = names.overlayBackgroundOpacity
+        opacitySlider.target = self
+        opacitySlider.action = #selector(changeOverlayOpacity(_:))
+        opacitySlider.isContinuous = false
+        opacitySlider.widthAnchor.constraint(equalToConstant: 220).isActive = true
+        updateOpacityValueLabel()
+        let opacityRow = NSStackView(views: [
+            opacityLabel,
+            opacitySlider,
+            opacityValueLabel
+        ])
+        opacityRow.orientation = .horizontal
+        opacityRow.alignment = .centerY
+        opacityRow.spacing = 8
+
         let menuBarModeLabel = NSTextField(labelWithString: "Menu bar names:")
         let menuBarModePopup = NSPopUpButton(frame: .zero, pullsDown: false)
         menuBarModePopup.addItems(withTitles: [
@@ -101,9 +132,12 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
 
+        let colorLegend = makeColorLegend()
         let stack = NSStackView(views: [openMenuRow, moveWindowRow, scroll,
+                                        colorLegend,
                                         menuBarModeRow, shortcutToggle,
-                                        overlayToggle, launchToggle])
+                                        overlayToggle, appWindowsToggle,
+                                        opacityRow, launchToggle])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
@@ -118,6 +152,60 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
             scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 280),
             scroll.widthAnchor.constraint(equalToConstant: 600)
         ])
+    }
+
+    private func makeColorLegend() -> NSView {
+        let title = NSTextField(
+            labelWithString: "Colour legend"
+        )
+        title.font = NSFont.systemFont(
+            ofSize: NSFont.systemFontSize,
+            weight: .semibold
+        )
+
+        let categories = [
+            ("0433FF", "Work"),
+            ("FF40FF", "Hobby"),
+            ("00A800", "Empty screens"),
+            ("3A3A40", "Mixed"),
+            ("FB4A00", "Unsorted windows"),
+            ("AA7942", "Personal tasks"),
+        ]
+        let items = categories.map { makeLegendItem(hex: $0.0, title: $0.1) }
+        let grid = NSGridView(views: [
+            Array(items[0...2]),
+            Array(items[3...5]),
+        ])
+        grid.rowSpacing = 8
+        grid.columnSpacing = 12
+        grid.xPlacement = .leading
+        grid.yPlacement = .center
+
+        let legend = NSStackView(views: [title, grid])
+        legend.orientation = .vertical
+        legend.alignment = .leading
+        legend.spacing = 6
+        return legend
+    }
+
+    private func makeLegendItem(hex: String, title: String) -> NSView {
+        let swatch = NSView(frame: NSRect(x: 0, y: 0, width: 14, height: 14))
+        swatch.wantsLayer = true
+        swatch.layer?.backgroundColor = WorkspaceColor.color(from: hex).cgColor
+        swatch.layer?.cornerRadius = 3
+        swatch.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            swatch.widthAnchor.constraint(equalToConstant: 14),
+            swatch.heightAnchor.constraint(equalToConstant: 14),
+        ])
+
+        let label = NSTextField(labelWithString: title)
+        let item = NSStackView(views: [swatch, label])
+        item.orientation = .horizontal
+        item.alignment = .centerY
+        item.spacing = 6
+        item.widthAnchor.constraint(equalToConstant: 180).isActive = true
+        return item
     }
 
     @objc private func toggleLaunchAtLogin(_ sender: NSButton) {
@@ -135,6 +223,20 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
         let on = (sender.state == .on)
         names.showMissionControlOverlay = on
         overlayChanged(on)   // AppDelegate calls overlay.setEnabled(on)
+    }
+
+    @objc private func toggleOverlayAppWindows(_ sender: NSButton) {
+        names.overlayShowsAppWindows = (sender.state == .on)
+    }
+
+    @objc private func changeOverlayOpacity(_ sender: NSSlider) {
+        names.overlayBackgroundOpacity = sender.doubleValue
+        updateOpacityValueLabel()
+    }
+
+    private func updateOpacityValueLabel() {
+        opacityValueLabel.stringValue =
+            "\(Int((opacitySlider.doubleValue * 100).rounded()))%"
     }
 
     @objc private func changeMenuBarDisplayMode(_ sender: NSPopUpButton) {

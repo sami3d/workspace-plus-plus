@@ -18,6 +18,13 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - Active workspace names in the menu bar now use their assigned workspace
   colours. Per-display mode updates each monitor independently, while combined
   mode preserves the individual colour of every displayed name.
+- Mission Control appearance controls let users choose between a centered name
+  band that leaves app windows visible and a full-screen colour wash, and set
+  the coloured background opacity from 10 to 100 percent. Text remains fully
+  opaque in both layouts.
+- Preferences includes a colour-category legend: blue for Work, pink for
+  Hobby, green for Empty screens, grey for Mixed, red for Unsorted windows,
+  and brown for Personal tasks.
 
 ### Fixed
 - Move-only now returns to the focused window's exact original managed Space

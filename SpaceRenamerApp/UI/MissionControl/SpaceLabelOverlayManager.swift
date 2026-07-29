@@ -23,6 +23,7 @@ final class SpaceLabelOverlayManager {
     private var cancellables: Set<AnyCancellable> = []
     private var nameChangeObserver: NSObjectProtocol?
     private var colorChangeObserver: NSObjectProtocol?
+    private var appearanceChangeObserver: NSObjectProtocol?
     private(set) var isEnabled = false
 
     init(monitor: SpaceMonitor, names: NameStore,
@@ -47,6 +48,10 @@ final class SpaceLabelOverlayManager {
             if let obs = colorChangeObserver {
                 NotificationCenter.default.removeObserver(obs)
                 colorChangeObserver = nil
+            }
+            if let obs = appearanceChangeObserver {
+                NotificationCenter.default.removeObserver(obs)
+                appearanceChangeObserver = nil
             }
             tearDownAllWindows()
         }
@@ -91,6 +96,24 @@ final class SpaceLabelOverlayManager {
                 )
             }
         }
+
+        appearanceChangeObserver = NotificationCenter.default.addObserver(
+            forName: .spaceRenamerOverlayAppearanceDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                // Layout constraints differ between the centered-band and
+                // full-screen treatments, so recreate and re-anchor the
+                // lightweight windows when either preference changes.
+                self.tearDownAllWindows()
+                self.sync(
+                    spaces: self.monitor.spaces,
+                    activeIDsByDisplay: self.monitor.activeIDsByDisplay
+                )
+            }
+        }
     }
 
     private func sync(spaces: [ParsedSpace], activeIDsByDisplay: [String: String]) {
@@ -121,6 +144,10 @@ final class SpaceLabelOverlayManager {
                     spaceId: space.id,
                     name: name,
                     color: color,
+                    backgroundOpacity: CGFloat(
+                        names.overlayBackgroundOpacity
+                    ),
+                    showsAppWindows: names.overlayShowsAppWindows,
                     screen: screen
                 )
                 window.orderFrontRegardless()

@@ -175,4 +175,27 @@ import XCTest
         let reborn = NameStore(defaults: defaults)
         XCTAssertFalse(reborn.showMissionControlOverlay)
     }
+
+    func test_overlayShowsAppWindows_defaultsTrue_thenPersistsFalse() {
+        XCTAssertTrue(store.overlayShowsAppWindows)
+        store.overlayShowsAppWindows = false
+        XCTAssertFalse(NameStore(defaults: defaults).overlayShowsAppWindows)
+    }
+
+    func test_overlayBackgroundOpacity_defaultsTo70Percent_andPersists() {
+        XCTAssertEqual(store.overlayBackgroundOpacity, 0.70, accuracy: 0.001)
+        store.overlayBackgroundOpacity = 0.45
+        XCTAssertEqual(
+            NameStore(defaults: defaults).overlayBackgroundOpacity,
+            0.45,
+            accuracy: 0.001
+        )
+    }
+
+    func test_overlayBackgroundOpacity_clampsToSupportedRange() {
+        store.overlayBackgroundOpacity = -1
+        XCTAssertEqual(store.overlayBackgroundOpacity, 0.10, accuracy: 0.001)
+        store.overlayBackgroundOpacity = 2
+        XCTAssertEqual(store.overlayBackgroundOpacity, 1.0, accuracy: 0.001)
+    }
 }

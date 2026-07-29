@@ -21,27 +21,36 @@ final class SpaceLabelWindow: NSWindow {
     let spaceId: String
     private let tintView = NSView()
     private let label = NSTextField(labelWithString: "")
-    private let labelFontSize: CGFloat = 92
-    private let horizontalTextInset: CGFloat = 40
+    private static let labelFontSize: CGFloat = 128
+    private static let bandOuterInset: CGFloat = 64
+    private static let bandTextInset: CGFloat = 64
+    private static let bandVerticalInset: CGFloat = 48
+    private let backgroundOpacity: CGFloat
+    private let showsAppWindows: Bool
+    private let targetScreenFrame: NSRect
     private var isActiveSpace = false
     private var fadeWorkItem: DispatchWorkItem?
     private static let fadeAfterSeconds: TimeInterval = 0.1
     private static let fadeDuration: TimeInterval = 0.4
 
-    init(spaceId: String, name: String, color: NSColor, screen: NSScreen) {
+    init(spaceId: String, name: String, color: NSColor,
+         backgroundOpacity: CGFloat, showsAppWindows: Bool, screen: NSScreen) {
         self.spaceId = spaceId
+        self.backgroundOpacity = backgroundOpacity
+        self.showsAppWindows = showsAppWindows
         let screenFrame = screen.frame
-        // Keep the banner fully inside compact displays and scaled-display
-        // modes. The previous fixed 800×500 window could extend beyond a
-        // narrow screen even before text layout was considered.
-        let bannerSize = NSSize(
-            width: max(1, min(800, floor(screenFrame.width * 0.82))),
-            height: max(1, min(560, floor(screenFrame.height * 0.72)))
+        self.targetScreenFrame = screenFrame
+        // Mission Control uses the window's real bounds, not the visible
+        // pixels inside a transparent full-screen window. Use a genuinely
+        // band-sized window when app windows should remain visible.
+        let windowFrame = Self.windowFrame(
+            for: name,
+            screenFrame: screenFrame,
+            showsAppWindows: showsAppWindows
         )
-        let origin = NSPoint(x: screenFrame.midX - bannerSize.width / 2,
-                             y: screenFrame.midY - bannerSize.height / 2)
+        let bannerSize = windowFrame.size
 
-        super.init(contentRect: NSRect(origin: origin, size: bannerSize),
+        super.init(contentRect: windowFrame,
                    styleMask: [.borderless, .fullSizeContentView],
                    backing: .buffered, defer: false)
 
@@ -58,28 +67,13 @@ final class SpaceLabelWindow: NSWindow {
                                    .fullScreenAuxiliary, .ignoresCycle]
         self.ignoresMouseEvents = true
 
-        // Dark translucent glass with the label centered. Forces `darkAqua` so
-        // the banner shape stays consistent regardless of the user's appearance.
-        let effect = NSVisualEffectView(frame: NSRect(origin: .zero, size: bannerSize))
-        effect.material = .hudWindow
-        effect.blendingMode = .behindWindow
-        effect.state = .active
-        effect.appearance = NSAppearance(named: .darkAqua)
-        effect.wantsLayer = true
-        effect.layer?.cornerRadius = 36
-        effect.layer?.masksToBounds = true
+        let container = NSView(frame: NSRect(origin: .zero, size: bannerSize))
+        container.wantsLayer = true
 
         tintView.wantsLayer = true
         tintView.translatesAutoresizingMaskIntoConstraints = false
-        effect.addSubview(tintView)
-        NSLayoutConstraint.activate([
-            tintView.topAnchor.constraint(equalTo: effect.topAnchor),
-            tintView.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
-            tintView.trailingAnchor.constraint(equalTo: effect.trailingAnchor),
-            tintView.bottomAnchor.constraint(equalTo: effect.bottomAnchor),
-        ])
 
-        label.font = NSFont.systemFont(ofSize: labelFontSize, weight: .bold)
+        label.font = NSFont.systemFont(ofSize: Self.labelFontSize, weight: .bold)
         label.alignment = .center
         label.maximumNumberOfLines = 4
         label.lineBreakMode = .byWordWrapping
@@ -88,35 +82,70 @@ final class SpaceLabelWindow: NSWindow {
         label.cell?.isScrollable = false
         label.preferredMaxLayoutWidth = max(
             1,
-            bannerSize.width - horizontalTextInset * 2
+            bannerSize.width - (
+                showsAppWindows
+                    ? Self.bandTextInset * 2
+                    : Self.bandOuterInset * 2
+            )
         )
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         label.setContentCompressionResistancePriority(.required, for: .vertical)
         label.stringValue = name
         label.translatesAutoresizingMaskIntoConstraints = false
-        effect.addSubview(label)
+
+        container.addSubview(tintView)
         NSLayoutConstraint.activate([
-            label.centerYAnchor.constraint(equalTo: effect.centerYAnchor),
-            label.leadingAnchor.constraint(
-                equalTo: effect.leadingAnchor,
-                constant: horizontalTextInset
-            ),
-            label.trailingAnchor.constraint(
-                equalTo: effect.trailingAnchor,
-                constant: -horizontalTextInset
-            ),
-            label.topAnchor.constraint(
-                greaterThanOrEqualTo: effect.topAnchor,
-                constant: 24
-            ),
-            label.bottomAnchor.constraint(
-                lessThanOrEqualTo: effect.bottomAnchor,
-                constant: -24
-            ),
+            tintView.topAnchor.constraint(equalTo: container.topAnchor),
+            tintView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            tintView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            tintView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
         ])
+        tintView.addSubview(label)
+        if showsAppWindows {
+            tintView.layer?.cornerRadius = 36
+            tintView.layer?.masksToBounds = true
+            NSLayoutConstraint.activate([
+                label.topAnchor.constraint(
+                    equalTo: tintView.topAnchor,
+                    constant: Self.bandVerticalInset
+                ),
+                label.bottomAnchor.constraint(
+                    equalTo: tintView.bottomAnchor,
+                    constant: -Self.bandVerticalInset
+                ),
+                label.leadingAnchor.constraint(
+                    equalTo: tintView.leadingAnchor,
+                    constant: Self.bandTextInset
+                ),
+                label.trailingAnchor.constraint(
+                    equalTo: tintView.trailingAnchor,
+                    constant: -Self.bandTextInset
+                ),
+            ])
+        } else {
+            NSLayoutConstraint.activate([
+                label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+                label.leadingAnchor.constraint(
+                    equalTo: container.leadingAnchor,
+                    constant: Self.bandOuterInset
+                ),
+                label.trailingAnchor.constraint(
+                    equalTo: container.trailingAnchor,
+                    constant: -Self.bandOuterInset
+                ),
+                label.topAnchor.constraint(
+                    greaterThanOrEqualTo: container.topAnchor,
+                    constant: 40
+                ),
+                label.bottomAnchor.constraint(
+                    lessThanOrEqualTo: container.bottomAnchor,
+                    constant: -40
+                ),
+            ])
+        }
         setColor(color)
 
-        self.contentView = effect
+        self.contentView = container
         self.alphaValue = 0   // manager will set the right state right after init
 
         // Drive active-Space visibility from occlusion: Mission Control covers
@@ -153,11 +182,22 @@ final class SpaceLabelWindow: NSWindow {
 
     func setName(_ name: String) {
         label.stringValue = name
+        guard showsAppWindows else { return }
+        let newFrame = Self.windowFrame(
+            for: name,
+            screenFrame: targetScreenFrame,
+            showsAppWindows: true
+        )
+        label.preferredMaxLayoutWidth = max(
+            1,
+            newFrame.width - Self.bandTextInset * 2
+        )
+        setFrame(newFrame, display: true)
     }
 
     func setColor(_ color: NSColor) {
         tintView.layer?.backgroundColor = color
-            .withAlphaComponent(0.78)
+            .withAlphaComponent(backgroundOpacity)
             .cgColor
         label.textColor = WorkspaceColor.readableTextColor(on: color)
     }
@@ -222,5 +262,41 @@ final class SpaceLabelWindow: NSWindow {
         anim.repeatCount = .infinity
         anim.isRemovedOnCompletion = false
         layer.add(anim, forKey: key)
+    }
+
+    private static func windowFrame(
+        for name: String,
+        screenFrame: NSRect,
+        showsAppWindows: Bool
+    ) -> NSRect {
+        guard showsAppWindows else { return screenFrame }
+
+        let width = max(1, screenFrame.width - bandOuterInset * 2)
+        let textWidth = max(1, width - bandTextInset * 2)
+        let font = NSFont.systemFont(ofSize: labelFontSize, weight: .bold)
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .center
+        paragraphStyle.lineBreakMode = .byWordWrapping
+        let measured = (name as NSString).boundingRect(
+            with: NSSize(width: textWidth, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [
+                .font: font,
+                .paragraphStyle: paragraphStyle,
+            ]
+        )
+        let lineHeight = ceil(font.ascender - font.descender + font.leading)
+        let textHeight = min(ceil(measured.height), lineHeight * 4)
+        let desiredHeight = max(
+            lineHeight + bandVerticalInset * 2,
+            textHeight + bandVerticalInset * 2
+        )
+        let height = max(1, min(screenFrame.height - 80, desiredHeight))
+        return NSRect(
+            x: screenFrame.midX - width / 2,
+            y: screenFrame.midY - height / 2,
+            width: width,
+            height: height
+        )
     }
 }
