@@ -138,6 +138,9 @@ final class PerDisplayMenuBarLabelManager: NSObject {
     private var entries: [String: Entry] = [:]
     private var currentLabels: [String: ActiveLabel] = [:]
     private(set) var isEnabled = false
+    /// Display whose per-screen label opened the menu that is about to be
+    /// populated. Set before `popUp`, which is what drives `menuNeedsUpdate`.
+    private(set) var menuOriginDisplayID: String?
     nonisolated(unsafe) private var screenObserver: NSObjectProtocol?
     nonisolated(unsafe) private var anchorObservers: [NSObjectProtocol] = []
     private weak var observedAnchorWindow: NSWindow?
@@ -375,6 +378,7 @@ final class PerDisplayMenuBarLabelManager: NSObject {
     }
 
     private func showMenu(from control: LabelControl) {
+        menuOriginDisplayID = entries.first { $0.value.control === control }?.key
         menu.popUp(
             positioning: nil,
             at: NSPoint(x: control.bounds.midX, y: control.bounds.minY),

@@ -107,7 +107,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let reachable: Set<Int> = ctrlDigitMode
             ? SystemShortcutChecker.reachableSwitchToDesktopOrdinals() : []
 
-        for (displayIndex, display) in monitor.displays.enumerated() {
+        for (displayIndex, display) in displaysInMenuOrder().enumerated() {
             if displayIndex > 0 {
                 menu.addItem(.separator())
             }
@@ -150,6 +150,33 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let quit = NSMenuItem(title: "Quit Workspace++", action: #selector(quitClicked), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
+    }
+
+    /// The display the menu was opened from leads, so the desktops you can see
+    /// are the ones at the top; the rest keep their snapshot order below it.
+    private func displaysInMenuOrder() -> [ParsedDisplay] {
+        var displays = monitor.displays
+        guard displays.count > 1, let index = originDisplayIndex(in: displays) else {
+            return displays
+        }
+        displays.insert(displays.remove(at: index), at: 0)
+        return displays
+    }
+
+    private func originDisplayIndex(in displays: [ParsedDisplay]) -> Int? {
+        if perDisplayLabels.isEnabled,
+           let originID = perDisplayLabels.menuOriginDisplayID,
+           let index = displays.firstIndex(where: { $0.id == originID }) {
+            return index
+        }
+        // The shared status item is mirrored onto every menu bar, so which one
+        // was clicked is only recoverable from where the pointer is.
+        guard let screen = NSScreen.screens.first(where: {
+            $0.frame.contains(NSEvent.mouseLocation)
+        }) else { return nil }
+        return displays.firstIndex {
+            DisplayResolver.matches(screen, managedDisplayID: $0.id)
+        }
     }
 
     private func populateSpaces(_ spaces: [ParsedSpace], in targetMenu: NSMenu,

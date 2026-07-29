@@ -44,6 +44,9 @@ approval when upgrading.
   width, and aligned to macOS's native status-item spacing.
 - The active workspace name uses the colour assigned to that workspace in
   Preferences, and updates immediately when the colour changes.
+- The menu lists the display you opened it from first, so the Spaces at the top
+  are always the ones on the screen you are looking at. Remaining displays keep
+  their usual order below.
 
 ### Three ways to switch
 

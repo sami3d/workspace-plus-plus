@@ -7,6 +7,12 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **The Workspace++ menu now leads with the display it was opened from.**
+  Clicking the label on an external monitor lists that monitor's Spaces first
+  and the built-in display's below it, instead of always using a fixed order.
+  Per-display mode identifies the clicked label exactly; combined mode falls
+  back to the pointer's screen, since macOS mirrors one status item onto every
+  menu bar.
 - **Move Focused Window** opens a native, keyboard-first workspace picker.
   Search the live Workspace++ names and press Return to move the captured
   window directly to that Space while staying put, or Option-Return to move it
