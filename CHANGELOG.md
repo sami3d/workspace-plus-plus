@@ -15,6 +15,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 - **Per-workspace banner colours** can be assigned from Preferences. Each
   Mission Control name banner uses its workspace's chosen background colour
   and automatically switches between light and dark text for readability.
+- Active workspace names in the menu bar now use their assigned workspace
+  colours. Per-display mode updates each monitor independently, while combined
+  mode preserves the individual colour of every displayed name.
 
 ### Fixed
 - Move-only now returns to the focused window's exact original managed Space

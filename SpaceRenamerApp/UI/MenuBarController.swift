@@ -59,6 +59,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshTitle() }
             .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .spaceRenamerColorDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshTitle() }
+            .store(in: &cancellables)
         refreshTitle()
     }
 
@@ -217,12 +221,21 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func refreshTitle() {
-        let activeNames = monitor.displays.compactMap { display -> String? in
+        let activeLabels = monitor.displays.compactMap {
+            display -> (title: String, color: NSColor)? in
             guard let activeID = monitor.activeIDsByDisplay[display.id],
                   let active = display.spaces.first(where: { $0.id == activeID }) else {
                 return nil
             }
-            return names.name(for: active.storageID, defaultOrdinal: active.ordinal)
+            return (
+                names.name(
+                    for: active.storageID,
+                    defaultOrdinal: active.ordinal
+                ),
+                MenuBarTitleStyle.workspaceColor(
+                    from: names.colorHex(for: active.storageID)
+                )
+            )
         }
 
         if names.menuBarDisplayMode == .perDisplay, monitor.displays.count > 1 {
@@ -237,8 +250,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         perDisplayLabels.setEnabled(false)
         statusItem.length = NSStatusItem.variableLength
-        if !activeNames.isEmpty {
-            setStatusTitle(activeNames.joined(separator: "  ·  "))
+        if !activeLabels.isEmpty {
+            setStatusLabels(activeLabels)
         } else if monitor.lastLoadError != nil {
             setStatusTitle("\u{26A0}\u{FE0E} Desktop")
         } else {
@@ -249,6 +262,31 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func setStatusTitle(_ title: String) {
         guard let button = statusItem.button else { return }
         button.attributedTitle = MenuBarTitleStyle.attributed(title, font: button.font)
+    }
+
+    /// Combined mode can show active workspaces from multiple displays. Keep
+    /// each name in its own saved colour rather than flattening the whole
+    /// status title to a single tint.
+    private func setStatusLabels(_ labels: [(title: String, color: NSColor)]) {
+        guard let button = statusItem.button else { return }
+        let result = NSMutableAttributedString()
+        for (index, label) in labels.enumerated() {
+            if index > 0 {
+                result.append(NSAttributedString(
+                    string: "  ·  ",
+                    attributes: [
+                        .font: button.font ?? NSFont.menuBarFont(ofSize: 0),
+                        .foregroundColor: NSColor.secondaryLabelColor
+                    ]
+                ))
+            }
+            result.append(MenuBarTitleStyle.attributed(
+                label.title,
+                font: button.font,
+                color: label.color
+            ))
+        }
+        button.attributedTitle = result
     }
 
     @objc private func spaceClicked(_ sender: NSMenuItem) {

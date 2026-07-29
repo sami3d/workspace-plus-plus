@@ -42,8 +42,8 @@ approval when upgrading.
   menu-bar item.
 - Per-display labels are independently measured, clickable across their full
   width, and aligned to macOS's native status-item spacing.
-- A sky-blue label makes the active workspace easy to find without overpowering
-  the rest of the menu bar.
+- The active workspace name uses the colour assigned to that workspace in
+  Preferences, and updates immediately when the colour changes.
 
 ### Three ways to switch
 
