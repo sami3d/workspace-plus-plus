@@ -12,6 +12,9 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   window directly to that Space while staying put, or Option-Return to move it
   and follow it to the destination. The picker has its own configurable
   global shortcut and does not require Raycast.
+- **Per-workspace banner colours** can be assigned from Preferences. Each
+  Mission Control name banner uses its workspace's chosen background colour
+  and automatically switches between light and dark text for readability.
 
 ### Fixed
 - Move-only now returns to the focused window's exact original managed Space

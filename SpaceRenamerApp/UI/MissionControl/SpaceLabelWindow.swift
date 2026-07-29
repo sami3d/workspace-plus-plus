@@ -19,6 +19,7 @@ import QuartzCore
 @MainActor
 final class SpaceLabelWindow: NSWindow {
     let spaceId: String
+    private let tintView = NSView()
     private let label = NSTextField(labelWithString: "")
     private let labelFontSize: CGFloat = 92
     private let horizontalTextInset: CGFloat = 40
@@ -27,7 +28,7 @@ final class SpaceLabelWindow: NSWindow {
     private static let fadeAfterSeconds: TimeInterval = 0.1
     private static let fadeDuration: TimeInterval = 0.4
 
-    init(spaceId: String, name: String, screen: NSScreen) {
+    init(spaceId: String, name: String, color: NSColor, screen: NSScreen) {
         self.spaceId = spaceId
         let screenFrame = screen.frame
         // Keep the banner fully inside compact displays and scaled-display
@@ -68,8 +69,17 @@ final class SpaceLabelWindow: NSWindow {
         effect.layer?.cornerRadius = 36
         effect.layer?.masksToBounds = true
 
+        tintView.wantsLayer = true
+        tintView.translatesAutoresizingMaskIntoConstraints = false
+        effect.addSubview(tintView)
+        NSLayoutConstraint.activate([
+            tintView.topAnchor.constraint(equalTo: effect.topAnchor),
+            tintView.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
+            tintView.trailingAnchor.constraint(equalTo: effect.trailingAnchor),
+            tintView.bottomAnchor.constraint(equalTo: effect.bottomAnchor),
+        ])
+
         label.font = NSFont.systemFont(ofSize: labelFontSize, weight: .bold)
-        label.textColor = .labelColor
         label.alignment = .center
         label.maximumNumberOfLines = 4
         label.lineBreakMode = .byWordWrapping
@@ -104,6 +114,7 @@ final class SpaceLabelWindow: NSWindow {
                 constant: -24
             ),
         ])
+        setColor(color)
 
         self.contentView = effect
         self.alphaValue = 0   // manager will set the right state right after init
@@ -142,6 +153,13 @@ final class SpaceLabelWindow: NSWindow {
 
     func setName(_ name: String) {
         label.stringValue = name
+    }
+
+    func setColor(_ color: NSColor) {
+        tintView.layer?.backgroundColor = color
+            .withAlphaComponent(0.78)
+            .cgColor
+        label.textColor = WorkspaceColor.readableTextColor(on: color)
     }
 
     /// Mission Control covers the on-screen window when it opens, which the

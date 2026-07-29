@@ -73,6 +73,8 @@ second list of names.
 - Optional large name banners on non-active Mission Control thumbnails.
 - A brief switch-in label confirms where you landed.
 - Per-Space overlay windows are anchored to the correct physical display.
+- Give each workspace its own banner colour in Preferences; label text adjusts
+  automatically for contrast.
 
 ### Flexible switching engine
 
@@ -88,7 +90,7 @@ second list of names.
 - Live display names and active-state checkmarks.
 - Helpful warnings when required Mission Control shortcuts or Accessibility
   permission are missing.
-- 82 fast core tests plus CI builds for the AppKit app and Raycast extension.
+- 86 fast core tests plus CI builds for the AppKit app and Raycast extension.
 
 ## Requirements
 
@@ -139,6 +141,7 @@ updates.
    - separate or combined menu-bar names;
    - switching mode;
    - Mission Control labels;
+   - a background colour for each workspace label;
    - global shortcuts;
    - the Move Focused Window picker shortcut;
    - Launch at Login.

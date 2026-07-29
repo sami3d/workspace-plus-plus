@@ -3,6 +3,10 @@ import Combine
 import KeyboardShortcuts
 import SpaceRenamerCore
 
+private final class WorkspaceColorWell: NSColorWell {
+    var storageID = ""
+}
+
 @MainActor
 final class PreferencesWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate {
     private let monitor: SpaceMonitor
@@ -19,7 +23,7 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
         self.names = names
         self.overlayChanged = overlayChanged
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 500),
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 520),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered, defer: false)
         window.title = "Workspace++ Preferences"
@@ -76,13 +80,16 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
         menuBarModeRow.spacing = 8
 
         let displayCol = NSTableColumn(identifier: .init("display"))
-        displayCol.title = "Monitor"; displayCol.width = 120
+        displayCol.title = "Monitor"; displayCol.width = 130
         let nameCol = NSTableColumn(identifier: .init("name"))
-        nameCol.title = "Desktop"; nameCol.width = 140
+        nameCol.title = "Desktop"; nameCol.width = 170
+        let colorCol = NSTableColumn(identifier: .init("color"))
+        colorCol.title = "Colour"; colorCol.width = 90
         let hotkeyCol = NSTableColumn(identifier: .init("hotkey"))
-        hotkeyCol.title = "Hotkey"; hotkeyCol.width = 170
+        hotkeyCol.title = "Hotkey"; hotkeyCol.width = 180
         table.addTableColumn(displayCol)
         table.addTableColumn(nameCol)
+        table.addTableColumn(colorCol)
         table.addTableColumn(hotkeyCol)
         table.dataSource = self
         table.delegate = self
@@ -109,7 +116,7 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
             stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             stack.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             scroll.heightAnchor.constraint(greaterThanOrEqualToConstant: 280),
-            scroll.widthAnchor.constraint(equalToConstant: 440)
+            scroll.widthAnchor.constraint(equalToConstant: 600)
         ])
     }
 
@@ -134,6 +141,11 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
         names.menuBarDisplayMode = sender.indexOfSelectedItem == 0 ? .perDisplay : .combined
     }
 
+    @objc private func changeWorkspaceColor(_ sender: WorkspaceColorWell) {
+        guard !sender.storageID.isEmpty else { return }
+        names.setColorHex(sender.storageID, WorkspaceColor.hex(from: sender.color))
+    }
+
     func numberOfRows(in tableView: NSTableView) -> Int { monitor.spaces.count }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
@@ -145,6 +157,21 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
                 DisplayResolver.name(for: space.displayID, ordinal: ordinal))
         case "name":
             return NSTextField(labelWithString: names.name(for: space.storageID, defaultOrdinal: space.ordinal))
+        case "color":
+            let well = WorkspaceColorWell(
+                frame: NSRect(x: 0, y: 0, width: 56, height: 24)
+            )
+            well.storageID = space.storageID
+            well.color = WorkspaceColor.color(
+                from: names.colorHex(for: space.storageID)
+            )
+            if #available(macOS 14.0, *) {
+                well.supportsAlpha = false
+            }
+            well.target = self
+            well.action = #selector(changeWorkspaceColor(_:))
+            well.toolTip = "Choose the background colour for this workspace name"
+            return well
         case "hotkey":
             return KeyboardShortcuts.RecorderCocoa(for: .space(space.storageID))
         default:

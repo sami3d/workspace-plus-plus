@@ -56,6 +56,41 @@ import XCTest
         XCTAssertEqual(reborn.name(for: "42", defaultOrdinal: 1), "Research")
     }
 
+    func test_colorDefaultsToNil() {
+        XCTAssertNil(store.colorHex(for: "42"))
+    }
+
+    func test_setColorHex_normalizesAndPersists() {
+        store.setColorHex("42", "#2a9df4")
+        XCTAssertEqual(store.colorHex(for: "42"), "2A9DF4")
+        XCTAssertEqual(
+            NameStore(defaults: defaults).colorHex(for: "42"),
+            "2A9DF4"
+        )
+    }
+
+    func test_setColorHex_invalidOrNilRestoresDefault() {
+        store.setColorHex("42", "2A9DF4")
+        store.setColorHex("42", "not-a-colour")
+        XCTAssertNil(store.colorHex(for: "42"))
+
+        store.setColorHex("42", "2A9DF4")
+        store.setColorHex("42", nil)
+        XCTAssertNil(store.colorHex(for: "42"))
+    }
+
+    func test_migrateKeys_movesColorsAndExistingNewKeyWins() {
+        store.setColorHex("42", "112233")
+        store.setColorHex("7", "445566")
+        store.setColorHex("UUID-B", "ABCDEF")
+        store.migrateKeys(["42": "UUID-A", "7": "UUID-B"])
+
+        XCTAssertEqual(store.colorHex(for: "UUID-A"), "112233")
+        XCTAssertEqual(store.colorHex(for: "UUID-B"), "ABCDEF")
+        XCTAssertNil(store.colorHex(for: "42"))
+        XCTAssertNil(store.colorHex(for: "7"))
+    }
+
     func test_systemShortcutsWarningFlag_defaultsFalse_thenPersists() {
         XCTAssertFalse(store.didWarnAboutSystemShortcuts)
         store.didWarnAboutSystemShortcuts = true

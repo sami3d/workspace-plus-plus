@@ -5,7 +5,8 @@ import SpaceRenamerCore
 /// Owns one `SpaceLabelWindow` per known Space. Watches `SpaceMonitor.$spaces`
 /// (create/destroy as Spaces are added/removed) and `$activeID` (toggle each
 /// window between active/preview mode), plus `NotificationCenter`
-/// `.spaceRenamerNameDidChange` to update labels on rename.
+/// `.spaceRenamerNameDidChange` and `.spaceRenamerColorDidChange` to update
+/// each label's text and background without rebuilding its anchored window.
 ///
 /// Enable/disable is driven by the Preferences "Show name in Mission Control"
 /// checkbox via `setEnabled(_:)`. When disabled, all windows are torn down and
@@ -21,6 +22,7 @@ final class SpaceLabelOverlayManager {
     private var windows: [String: SpaceLabelWindow] = [:]
     private var cancellables: Set<AnyCancellable> = []
     private var nameChangeObserver: NSObjectProtocol?
+    private var colorChangeObserver: NSObjectProtocol?
     private(set) var isEnabled = false
 
     init(monitor: SpaceMonitor, names: NameStore,
@@ -41,6 +43,10 @@ final class SpaceLabelOverlayManager {
             if let obs = nameChangeObserver {
                 NotificationCenter.default.removeObserver(obs)
                 nameChangeObserver = nil
+            }
+            if let obs = colorChangeObserver {
+                NotificationCenter.default.removeObserver(obs)
+                colorChangeObserver = nil
             }
             tearDownAllWindows()
         }
@@ -71,6 +77,20 @@ final class SpaceLabelOverlayManager {
                 window.setName(self.names.name(for: id, defaultOrdinal: space.ordinal))
             }
         }
+
+        colorChangeObserver = NotificationCenter.default.addObserver(
+            forName: .spaceRenamerColorDidChange, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let id = note.userInfo?["id"] as? String else { return }
+            Task { @MainActor in
+                guard let self,
+                      let space = self.monitor.spaces.first(where: { $0.storageID == id }),
+                      let window = self.windows[space.id] else { return }
+                window.setColor(
+                    WorkspaceColor.color(from: self.names.colorHex(for: id))
+                )
+            }
+        }
     }
 
     private func sync(spaces: [ParsedSpace], activeIDsByDisplay: [String: String]) {
@@ -88,12 +108,21 @@ final class SpaceLabelOverlayManager {
         for space in spaces {
             guard let screen = DisplayResolver.screen(for: space.displayID) else { continue }
             let name = names.name(for: space.storageID, defaultOrdinal: space.ordinal)
+            let color = WorkspaceColor.color(
+                from: names.colorHex(for: space.storageID)
+            )
             let isActive = (space.id == activeIDsByDisplay[space.displayID])
             if let window = windows[space.id] {
                 window.setName(name)
+                window.setColor(color)
                 window.setIsActiveSpace(isActive)
             } else {
-                let window = SpaceLabelWindow(spaceId: space.id, name: name, screen: screen)
+                let window = SpaceLabelWindow(
+                    spaceId: space.id,
+                    name: name,
+                    color: color,
+                    screen: screen
+                )
                 window.orderFrontRegardless()
                 _ = anchor.anchor(windowNumber: window.windowNumber, toSpaceID: space.id)
                 window.startRenderingLoop()
