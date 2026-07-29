@@ -6,6 +6,22 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Move Focused Window** opens a native, keyboard-first workspace picker.
+  Search the live Workspace++ names and press Return to move the captured
+  window directly to that Space while staying put, or Option-Return to move it
+  and follow it to the destination. The picker has its own configurable
+  global shortcut and does not require Raycast.
+
+### Fixed
+- Move-only now returns to the focused window's exact original managed Space
+  instead of inferring it from the monitor. Return navigation is confirmed
+  twice after animations settle, preventing a late queued key event from
+  leaving the user on a neighbouring Space.
+- Mission Control name banners now remain centered and inside the display.
+  Long workspace names shrink responsively to fit, with readable truncation
+  only for exceptionally long names.
+
 ## [1.0.0] — 2026-07-28
 
 ### Added

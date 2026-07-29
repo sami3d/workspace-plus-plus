@@ -9,6 +9,7 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
     private let names: NameStore
     private let table = NSTableView()
     private let openMenuRecorder = KeyboardShortcuts.RecorderCocoa(for: .openMenu)
+    private let moveWindowRecorder = KeyboardShortcuts.RecorderCocoa(for: .moveFocusedWindow)
     private let overlayChanged: (Bool) -> Void
     private var cancellables: Set<AnyCancellable> = []
 
@@ -39,6 +40,15 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
         guard let contentView = window?.contentView else { return }
 
         let openMenuLabel = NSTextField(labelWithString: "Open-menu hotkey:")
+        let openMenuRow = NSStackView(views: [openMenuLabel, openMenuRecorder])
+        openMenuRow.orientation = .horizontal
+        openMenuRow.alignment = .centerY
+        openMenuRow.spacing = 8
+        let moveWindowLabel = NSTextField(labelWithString: "Move-window picker:")
+        let moveWindowRow = NSStackView(views: [moveWindowLabel, moveWindowRecorder])
+        moveWindowRow.orientation = .horizontal
+        moveWindowRow.alignment = .centerY
+        moveWindowRow.spacing = 8
         let launchToggle = NSButton(checkboxWithTitle: "Launch at Login",
                                     target: self, action: #selector(toggleLaunchAtLogin(_:)))
         launchToggle.state = LaunchAtLogin.isEnabled ? .on : .off
@@ -84,7 +94,7 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
 
-        let stack = NSStackView(views: [openMenuLabel, openMenuRecorder, scroll,
+        let stack = NSStackView(views: [openMenuRow, moveWindowRow, scroll,
                                         menuBarModeRow, shortcutToggle,
                                         overlayToggle, launchToggle])
         stack.orientation = .vertical

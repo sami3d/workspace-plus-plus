@@ -57,6 +57,17 @@ sends the selected stable ID back through a local request file. It does not
 scrape the menu bar, automate clicks, use a network service, or maintain a
 second list of names.
 
+### Move a focused window directly
+
+- Open **Move Focused Window…** from the Workspace++ menu or assign its global
+  shortcut in Preferences.
+- Search the live workspace names with the keyboard—no Raycast dependency.
+- Press **Return** to move the captured window directly to the selected Space
+  while staying in the current workspace, or **Option-Return** to move it and
+  follow it to the destination.
+- Regular application windows are supported; macOS full-screen and tiled
+  windows cannot be reassigned to another desktop.
+
 ### Mission Control labels
 
 - Optional large name banners on non-active Mission Control thumbnails.
@@ -129,6 +140,7 @@ updates.
    - switching mode;
    - Mission Control labels;
    - global shortcuts;
+   - the Move Focused Window picker shortcut;
    - Launch at Login.
 4. In Raycast, search **Switch Space** and optionally assign it a global
    shortcut.
@@ -190,8 +202,9 @@ real-machine findings remain in `docs/superpowers/`.
 - The app has no analytics, account, cloud sync, or runtime network service.
 - The Raycast bridge uses files under
   `~/Library/Application Support/Space Renamer/`.
-- The read-only private SkyLight symbol is resolved at runtime solely to detect
-  the active Space. Switching uses public `CGEvent` keyboard events.
+- Private SkyLight symbols are resolved at runtime to detect active Spaces and
+  place optional Mission Control overlays. Space switching and direct,
+  user-requested window transfers use local `CGEvent` input events.
 
 ## Known limitations
 
@@ -204,6 +217,8 @@ real-machine findings remain in `docs/superpowers/`.
   snapshots the currently rendered Space after the transient label has faded.
 - Cross-display switching briefly repositions the pointer because macOS routes
   Mission Control shortcuts to the display containing it.
+- Direct window movement briefly carries the window through macOS's normal
+  animated Space transitions. The pointer is restored afterward.
 
 ## Raycast Store
 

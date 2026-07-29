@@ -9,6 +9,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let monitor: SpaceMonitor
     private let names: NameStore
     private let switcher: SwitcherEngine
+    private let openMoveWindowPicker: () -> Void
     private let openPreferences: () -> Void
     private var cancellables: Set<AnyCancellable> = []
     private let menu = NSMenu()
@@ -17,11 +18,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     init(monitor: SpaceMonitor,
          names: NameStore,
          switcher: SwitcherEngine,
+         openMoveWindowPicker: @escaping () -> Void,
          openPreferences: @escaping () -> Void) {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.monitor = monitor
         self.names = names
         self.switcher = switcher
+        self.openMoveWindowPicker = openMoveWindowPicker
         self.openPreferences = openPreferences
         super.init()
         setStatusTitle("Desktop")
@@ -130,6 +133,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
+        let moveWindow = NSMenuItem(
+            title: "Move Focused Window…",
+            action: #selector(moveWindowClicked),
+            keyEquivalent: ""
+        )
+        moveWindow.target = self
+        menu.addItem(moveWindow)
         let prefs = NSMenuItem(title: "Preferences…", action: #selector(prefsClicked), keyEquivalent: ",")
         prefs.target = self
         menu.addItem(prefs)
@@ -271,6 +281,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func prefsClicked() { openPreferences() }
+
+    @objc private func moveWindowClicked() { openMoveWindowPicker() }
 
     @objc private func quitClicked() { NSApp.terminate(nil) }
 }

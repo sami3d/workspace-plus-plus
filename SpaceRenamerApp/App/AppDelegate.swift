@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBar: MenuBarController!
     private var hotkeys: HotkeyManager!
     private var overlay: SpaceLabelOverlayManager!
+    private var moveWindowPicker: MoveWindowPickerController!
     private var prefs: PreferencesWindowController?
     private var spaceIDsObserver: AnyCancellable?
     private var raycastSpaceObserver: AnyCancellable?
@@ -40,10 +41,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             spaceSwitcher: ModeRoutingSpaceSwitcher(mode: { [weak names] in names?.switchMode ?? .default }),
             lookup: monitor)   // AppDelegate retains `monitor` (SwitcherEngine holds it weakly)
 
+        moveWindowPicker = MoveWindowPickerController(
+            monitor: monitor,
+            names: names,
+            switcher: switcher
+        )
         menuBar = MenuBarController(
             monitor: monitor,
             names: names,
             switcher: switcher,
+            openMoveWindowPicker: { [weak self] in self?.moveWindowPicker.showPicker() },
             openPreferences: { [weak self] in self?.showPreferences() }
         )
 
@@ -65,6 +72,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             catch { NSLog("Workspace++: hotkey switch failed: \(error)") }
         }
         hotkeys.onOpenMenu = { [weak self] in self?.menuBar.openMenu() }
+        hotkeys.onMoveFocusedWindow = { [weak self] in
+            self?.moveWindowPicker.showPicker()
+        }
         spaceIDsObserver = monitor.$spaces
             .receive(on: DispatchQueue.main)
             .sink { [weak self] spaces in self?.hotkeys.sync(knownIDs: spaces.map { $0.storageID }) }
