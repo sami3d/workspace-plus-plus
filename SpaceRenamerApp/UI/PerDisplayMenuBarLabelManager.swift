@@ -35,10 +35,20 @@ final class PerDisplayMenuBarLabelManager: NSObject {
             didSet { needsDisplay = true }
         }
 
-        private let leadingInset: CGFloat = 6
-        private let iconSize: CGFloat = 16
-        private let iconTitleGap: CGFloat = 6
-        private let trailingInset: CGFloat = 6
+        static let leadingInset: CGFloat = 6
+        static let iconSize: CGFloat = 16
+        static let iconTitleGap: CGFloat = 6
+        static let trailingInset: CGFloat = 6
+        private var leadingInset: CGFloat { Self.leadingInset }
+        private var iconSize: CGFloat { Self.iconSize }
+        private var iconTitleGap: CGFloat { Self.iconTitleGap }
+        private var trailingInset: CGFloat { Self.trailingInset }
+
+        static func width(for title: String, font: NSFont?) -> CGFloat {
+            let size = MenuBarTitleStyle.attributed(title, font: font).size()
+            return ceil(leadingInset + iconSize + iconTitleGap
+                        + size.width + trailingInset)
+        }
 
         override init(frame frameRect: NSRect) {
             super.init(frame: frameRect)
@@ -61,8 +71,7 @@ final class PerDisplayMenuBarLabelManager: NSObject {
             styledTitle = MenuBarTitleStyle.attributed(title, font: font)
             titleSize = styledTitle.size()
             needsDisplay = true
-            return ceil(leadingInset + iconSize + iconTitleGap
-                        + titleSize.width + trailingInset)
+            return Self.width(for: title, font: font)
         }
 
         override func layout() {
@@ -113,6 +122,8 @@ final class PerDisplayMenuBarLabelManager: NSObject {
     private var currentNames: [String: String] = [:]
     private(set) var isEnabled = false
     nonisolated(unsafe) private var screenObserver: NSObjectProtocol?
+    nonisolated(unsafe) private var anchorObservers: [NSObjectProtocol] = []
+    private weak var observedAnchorWindow: NSWindow?
 
     init(statusItem: NSStatusItem, menu: NSMenu) {
         self.statusItem = statusItem
@@ -132,6 +143,7 @@ final class PerDisplayMenuBarLabelManager: NSObject {
         if let screenObserver {
             NotificationCenter.default.removeObserver(screenObserver)
         }
+        anchorObservers.forEach { NotificationCenter.default.removeObserver($0) }
     }
 
     func setEnabled(_ enabled: Bool) {
@@ -139,10 +151,11 @@ final class PerDisplayMenuBarLabelManager: NSObject {
         isEnabled = enabled
         if enabled {
             statusItem.menu = nil
-            // A square invisible status item leaves a ghost slot after the
-            // custom label. It also competes with the overlaid control for
-            // clicks. Keep only its zero-width scene anchor.
-            statusItem.length = 0
+            // The status item must RESERVE the label's real width in the
+            // status bar. A zero-width anchor paints over space macOS
+            // believes is free, so other apps' newly added status items get
+            // slotted underneath our label. rebuildPanels() keeps the length
+            // in sync with the widest per-display label.
             statusItem.button?.image = nil
             statusItem.button?.attributedTitle = NSAttributedString(string: "")
             statusItem.button?.isEnabled = false
@@ -150,6 +163,7 @@ final class PerDisplayMenuBarLabelManager: NSObject {
             scheduleRebuild()
         } else {
             entries.values.forEach { $0.panel.orderOut(nil) }
+            stopObservingAnchorWindow()
             statusItem.button?.alphaValue = 1
             statusItem.button?.isEnabled = true
             statusItem.button?.image = nativeImage
@@ -200,9 +214,47 @@ final class PerDisplayMenuBarLabelManager: NSObject {
         }
     }
 
+    /// Other menu bar apps adding/removing status items shifts every slot,
+    /// including our anchor, without any screen-parameter notification.
+    /// Follow the anchor's scene window so the panels move with it.
+    private func observeAnchorWindow(_ window: NSWindow) {
+        guard window !== observedAnchorWindow else { return }
+        stopObservingAnchorWindow()
+        observedAnchorWindow = window
+        let center = NotificationCenter.default
+        for name in [NSWindow.didMoveNotification, NSWindow.didResizeNotification] {
+            anchorObservers.append(center.addObserver(
+                forName: name, object: window, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor in self?.scheduleRebuild() }
+            })
+        }
+    }
+
+    private func stopObservingAnchorWindow() {
+        anchorObservers.forEach { NotificationCenter.default.removeObserver($0) }
+        anchorObservers = []
+        observedAnchorWindow = nil
+    }
+
     private func rebuildPanels() {
         guard isEnabled, let anchorButton = statusItem.button,
               let anchorWindow = anchorButton.window else { return }
+        observeAnchorWindow(anchorWindow)
+
+        // Reserve the widest label's width so the status bar keeps this
+        // stretch of menu bar to itself. Skip the no-op write: changing the
+        // length makes AppKit re-lay-out the scene window, which would fire
+        // didResize and loop back here.
+        let widestLabel = currentNames.values
+            .map { LabelControl.width(for: $0, font: anchorButton.font) }
+            .max()
+        if let widestLabel, abs(statusItem.length - widestLabel) > 0.5 {
+            statusItem.length = widestLabel
+            // The scene window resizes after this transaction; the delayed
+            // scheduleRebuild pass below repositions the panels against the
+            // settled geometry.
+        }
 
         let liveDisplayIDs = Set(currentNames.keys)
         let staleDisplayIDs = entries.keys.filter { !liveDisplayIDs.contains($0) }
@@ -225,10 +277,9 @@ final class PerDisplayMenuBarLabelManager: NSObject {
             ?? NSScreen.screens.first(where: { $0.frame.intersects(anchorFrame) })
             ?? NSScreen.main
         guard let referenceScreen else { return }
-        // A zero-width NSStatusBarButton still lives inside a 16-point AppKit
-        // scene window. Ending at the button's maxX leaves that host window as
-        // a visible gap before the next menu-bar item. End at the scene
-        // window's trailing edge so our panel replaces the complete slot.
+        // End at the scene window's trailing edge so the panel sits flush in
+        // the reserved slot. Labels narrower than the widest one right-align
+        // within it, so they never paint outside the reserved stretch.
         let trailingOffset = referenceScreen.frame.maxX - anchorWindow.frame.maxX
         let verticalInset = max(
             0,

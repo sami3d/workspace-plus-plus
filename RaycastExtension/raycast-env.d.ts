@@ -21,3 +21,4 @@ declare namespace Arguments {
   /** Arguments passed to the `switch-space` command */
   export type SwitchSpace = {}
 }
+
