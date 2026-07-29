@@ -19,8 +19,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
   twice after animations settle, preventing a late queued key event from
   leaving the user on a neighbouring Space.
 - Mission Control name banners now remain centered and inside the display.
-  Long workspace names shrink responsively to fit, with readable truncation
-  only for exceptionally long names.
+  Names use a consistent large font and wrap into as many as four centered
+  lines instead of shrinking long names into small single-line text.
 
 ## [1.0.0] — 2026-07-28
 

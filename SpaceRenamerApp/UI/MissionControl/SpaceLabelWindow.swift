@@ -20,10 +20,8 @@ import QuartzCore
 final class SpaceLabelWindow: NSWindow {
     let spaceId: String
     private let label = NSTextField(labelWithString: "")
-    private let maximumFontSize: CGFloat = 150
-    private let minimumFontSize: CGFloat = 44
+    private let labelFontSize: CGFloat = 92
     private let horizontalTextInset: CGFloat = 40
-    private var availableTextWidth: CGFloat = 1
     private var isActiveSpace = false
     private var fadeWorkItem: DispatchWorkItem?
     private static let fadeAfterSeconds: TimeInterval = 0.1
@@ -37,7 +35,7 @@ final class SpaceLabelWindow: NSWindow {
         // narrow screen even before text layout was considered.
         let bannerSize = NSSize(
             width: max(1, min(800, floor(screenFrame.width * 0.82))),
-            height: max(1, min(500, floor(screenFrame.height * 0.55)))
+            height: max(1, min(560, floor(screenFrame.height * 0.72)))
         )
         let origin = NSPoint(x: screenFrame.midX - bannerSize.width / 2,
                              y: screenFrame.midY - bannerSize.height / 2)
@@ -70,12 +68,21 @@ final class SpaceLabelWindow: NSWindow {
         effect.layer?.cornerRadius = 36
         effect.layer?.masksToBounds = true
 
+        label.font = NSFont.systemFont(ofSize: labelFontSize, weight: .bold)
         label.textColor = .labelColor
         label.alignment = .center
-        label.maximumNumberOfLines = 1
-        label.lineBreakMode = .byTruncatingTail
-        label.allowsDefaultTighteningForTruncation = true
+        label.maximumNumberOfLines = 4
+        label.lineBreakMode = .byWordWrapping
+        label.usesSingleLineMode = false
+        label.cell?.wraps = true
+        label.cell?.isScrollable = false
+        label.preferredMaxLayoutWidth = max(
+            1,
+            bannerSize.width - horizontalTextInset * 2
+        )
         label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        label.setContentCompressionResistancePriority(.required, for: .vertical)
+        label.stringValue = name
         label.translatesAutoresizingMaskIntoConstraints = false
         effect.addSubview(label)
         NSLayoutConstraint.activate([
@@ -88,9 +95,15 @@ final class SpaceLabelWindow: NSWindow {
                 equalTo: effect.trailingAnchor,
                 constant: -horizontalTextInset
             ),
+            label.topAnchor.constraint(
+                greaterThanOrEqualTo: effect.topAnchor,
+                constant: 24
+            ),
+            label.bottomAnchor.constraint(
+                lessThanOrEqualTo: effect.bottomAnchor,
+                constant: -24
+            ),
         ])
-        availableTextWidth = max(1, bannerSize.width - horizontalTextInset * 2)
-        updateLabel(name)
 
         self.contentView = effect
         self.alphaValue = 0   // manager will set the right state right after init
@@ -128,30 +141,6 @@ final class SpaceLabelWindow: NSWindow {
     }
 
     func setName(_ name: String) {
-        updateLabel(name)
-    }
-
-    /// Preserve the large treatment for short names, then scale only as much
-    /// as needed for a long name to fit. Extremely long names stop at a
-    /// readable minimum and use centered tail truncation inside the banner.
-    private func updateLabel(_ name: String) {
-        let measuringFont = NSFont.systemFont(
-            ofSize: maximumFontSize,
-            weight: .bold
-        )
-        let measuredWidth = (name as NSString).size(
-            withAttributes: [.font: measuringFont]
-        ).width
-        let fittedSize: CGFloat
-        if measuredWidth > availableTextWidth {
-            fittedSize = max(
-                minimumFontSize,
-                floor(maximumFontSize * availableTextWidth / measuredWidth)
-            )
-        } else {
-            fittedSize = maximumFontSize
-        }
-        label.font = NSFont.systemFont(ofSize: fittedSize, weight: .bold)
         label.stringValue = name
     }
 
