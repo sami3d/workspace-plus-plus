@@ -9,6 +9,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let monitor: SpaceMonitor
     private let names: NameStore
     private let switcher: SwitcherEngine
+    private let openMoveWindowPicker: () -> Void
     private let openPreferences: () -> Void
     private var cancellables: Set<AnyCancellable> = []
     private let menu = NSMenu()
@@ -17,11 +18,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     init(monitor: SpaceMonitor,
          names: NameStore,
          switcher: SwitcherEngine,
+         openMoveWindowPicker: @escaping () -> Void,
          openPreferences: @escaping () -> Void) {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.monitor = monitor
         self.names = names
         self.switcher = switcher
+        self.openMoveWindowPicker = openMoveWindowPicker
         self.openPreferences = openPreferences
         super.init()
         setStatusTitle("Desktop")
@@ -53,6 +56,10 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             .sink { [weak self] _ in self?.refreshTitle() }
             .store(in: &cancellables)
         NotificationCenter.default.publisher(for: .spaceRenamerNameDidChange)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshTitle() }
+            .store(in: &cancellables)
+        NotificationCenter.default.publisher(for: .spaceRenamerColorDidChange)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshTitle() }
             .store(in: &cancellables)
@@ -100,7 +107,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         let reachable: Set<Int> = ctrlDigitMode
             ? SystemShortcutChecker.reachableSwitchToDesktopOrdinals() : []
 
-        for (displayIndex, display) in monitor.displays.enumerated() {
+        for (displayIndex, display) in displaysInMenuOrder().enumerated() {
             if displayIndex > 0 {
                 menu.addItem(.separator())
             }
@@ -130,12 +137,46 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
+        let moveWindow = NSMenuItem(
+            title: "Move Focused Window…",
+            action: #selector(moveWindowClicked),
+            keyEquivalent: ""
+        )
+        moveWindow.target = self
+        menu.addItem(moveWindow)
         let prefs = NSMenuItem(title: "Preferences…", action: #selector(prefsClicked), keyEquivalent: ",")
         prefs.target = self
         menu.addItem(prefs)
         let quit = NSMenuItem(title: "Quit Workspace++", action: #selector(quitClicked), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
+    }
+
+    /// The display the menu was opened from leads, so the desktops you can see
+    /// are the ones at the top; the rest keep their snapshot order below it.
+    private func displaysInMenuOrder() -> [ParsedDisplay] {
+        var displays = monitor.displays
+        guard displays.count > 1, let index = originDisplayIndex(in: displays) else {
+            return displays
+        }
+        displays.insert(displays.remove(at: index), at: 0)
+        return displays
+    }
+
+    private func originDisplayIndex(in displays: [ParsedDisplay]) -> Int? {
+        if perDisplayLabels.isEnabled,
+           let originID = perDisplayLabels.menuOriginDisplayID,
+           let index = displays.firstIndex(where: { $0.id == originID }) {
+            return index
+        }
+        // The shared status item is mirrored onto every menu bar, so which one
+        // was clicked is only recoverable from where the pointer is.
+        guard let screen = NSScreen.screens.first(where: {
+            $0.frame.contains(NSEvent.mouseLocation)
+        }) else { return nil }
+        return displays.firstIndex {
+            DisplayResolver.matches(screen, managedDisplayID: $0.id)
+        }
     }
 
     private func populateSpaces(_ spaces: [ParsedSpace], in targetMenu: NSMenu,
@@ -207,12 +248,21 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     private func refreshTitle() {
-        let activeNames = monitor.displays.compactMap { display -> String? in
+        let activeLabels = monitor.displays.compactMap {
+            display -> (title: String, color: NSColor)? in
             guard let activeID = monitor.activeIDsByDisplay[display.id],
                   let active = display.spaces.first(where: { $0.id == activeID }) else {
                 return nil
             }
-            return names.name(for: active.storageID, defaultOrdinal: active.ordinal)
+            return (
+                names.name(
+                    for: active.storageID,
+                    defaultOrdinal: active.ordinal
+                ),
+                MenuBarTitleStyle.workspaceColor(
+                    from: names.colorHex(for: active.storageID)
+                )
+            )
         }
 
         if names.menuBarDisplayMode == .perDisplay, monitor.displays.count > 1 {
@@ -227,8 +277,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
         perDisplayLabels.setEnabled(false)
         statusItem.length = NSStatusItem.variableLength
-        if !activeNames.isEmpty {
-            setStatusTitle(activeNames.joined(separator: "  ·  "))
+        if !activeLabels.isEmpty {
+            setStatusLabels(activeLabels)
         } else if monitor.lastLoadError != nil {
             setStatusTitle("\u{26A0}\u{FE0E} Desktop")
         } else {
@@ -239,6 +289,31 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private func setStatusTitle(_ title: String) {
         guard let button = statusItem.button else { return }
         button.attributedTitle = MenuBarTitleStyle.attributed(title, font: button.font)
+    }
+
+    /// Combined mode can show active workspaces from multiple displays. Keep
+    /// each name in its own saved colour rather than flattening the whole
+    /// status title to a single tint.
+    private func setStatusLabels(_ labels: [(title: String, color: NSColor)]) {
+        guard let button = statusItem.button else { return }
+        let result = NSMutableAttributedString()
+        for (index, label) in labels.enumerated() {
+            if index > 0 {
+                result.append(NSAttributedString(
+                    string: "  ·  ",
+                    attributes: [
+                        .font: button.font ?? NSFont.menuBarFont(ofSize: 0),
+                        .foregroundColor: NSColor.secondaryLabelColor
+                    ]
+                ))
+            }
+            result.append(MenuBarTitleStyle.attributed(
+                label.title,
+                font: button.font,
+                color: label.color
+            ))
+        }
+        button.attributedTitle = result
     }
 
     @objc private func spaceClicked(_ sender: NSMenuItem) {
@@ -271,6 +346,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func prefsClicked() { openPreferences() }
+
+    @objc private func moveWindowClicked() { openMoveWindowPicker() }
 
     @objc private func quitClicked() { NSApp.terminate(nil) }
 }

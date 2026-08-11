@@ -9,14 +9,22 @@ enum MenuBarTitleStyle {
         return NSColor(calibratedRed: 0.0, green: 0.48, blue: 0.84, alpha: 1.0)
     }
 
-    static func attributed(_ title: String, font: NSFont?) -> NSAttributedString {
+    static func attributed(_ title: String, font: NSFont?,
+                           color: NSColor = skyBlue) -> NSAttributedString {
         NSAttributedString(
             string: title,
             attributes: [
                 .font: font ?? NSFont.menuBarFont(ofSize: 0),
-                .foregroundColor: skyBlue
+                .foregroundColor: color
             ]
         )
+    }
+
+    /// Workspaces without an explicitly assigned colour retain Workspace++'s
+    /// familiar sky-blue menu-bar treatment.
+    static func workspaceColor(from hex: String?) -> NSColor {
+        guard let hex else { return skyBlue }
+        return WorkspaceColor.color(from: hex)
     }
 }
 
@@ -67,8 +75,12 @@ final class PerDisplayMenuBarLabelManager: NSObject {
             true
         }
 
-        func update(title: String, font: NSFont?) -> CGFloat {
-            styledTitle = MenuBarTitleStyle.attributed(title, font: font)
+        func update(title: String, color: NSColor, font: NSFont?) -> CGFloat {
+            styledTitle = MenuBarTitleStyle.attributed(
+                title,
+                font: font,
+                color: color
+            )
             titleSize = styledTitle.size()
             needsDisplay = true
             return Self.width(for: title, font: font)
@@ -115,12 +127,20 @@ final class PerDisplayMenuBarLabelManager: NSObject {
         }
     }
 
+    private struct ActiveLabel {
+        let title: String
+        let color: NSColor
+    }
+
     private let statusItem: NSStatusItem
     private let menu: NSMenu
     private let nativeImage: NSImage?
     private var entries: [String: Entry] = [:]
-    private var currentNames: [String: String] = [:]
+    private var currentLabels: [String: ActiveLabel] = [:]
     private(set) var isEnabled = false
+    /// Display whose per-screen label opened the menu that is about to be
+    /// populated. Set before `popUp`, which is what drives `menuNeedsUpdate`.
+    private(set) var menuOriginDisplayID: String?
     nonisolated(unsafe) private var screenObserver: NSObjectProtocol?
     nonisolated(unsafe) private var anchorObservers: [NSObjectProtocol] = []
     private weak var observedAnchorWindow: NSWindow?
@@ -176,12 +196,23 @@ final class PerDisplayMenuBarLabelManager: NSObject {
     func update(displays: [ParsedDisplay],
                 activeIDsByDisplay: [String: String],
                 names: NameStore) {
-        currentNames = Dictionary(uniqueKeysWithValues: displays.compactMap { display in
+        currentLabels = Dictionary(uniqueKeysWithValues: displays.compactMap { display in
             guard let activeID = activeIDsByDisplay[display.id],
                   let space = display.spaces.first(where: { $0.id == activeID }) else {
                 return nil
             }
-            return (display.id, names.name(for: space.storageID, defaultOrdinal: space.ordinal))
+            return (
+                display.id,
+                ActiveLabel(
+                    title: names.name(
+                        for: space.storageID,
+                        defaultOrdinal: space.ordinal
+                    ),
+                    color: MenuBarTitleStyle.workspaceColor(
+                        from: names.colorHex(for: space.storageID)
+                    )
+                )
+            )
         })
 
         guard isEnabled else { return }
@@ -246,8 +277,8 @@ final class PerDisplayMenuBarLabelManager: NSObject {
         // stretch of menu bar to itself. Skip the no-op write: changing the
         // length makes AppKit re-lay-out the scene window, which would fire
         // didResize and loop back here.
-        let widestLabel = currentNames.values
-            .map { LabelControl.width(for: $0, font: anchorButton.font) }
+        let widestLabel = currentLabels.values
+            .map { LabelControl.width(for: $0.title, font: anchorButton.font) }
             .max()
         if let widestLabel, abs(statusItem.length - widestLabel) > 0.5 {
             statusItem.length = widestLabel
@@ -256,7 +287,7 @@ final class PerDisplayMenuBarLabelManager: NSObject {
             // settled geometry.
         }
 
-        let liveDisplayIDs = Set(currentNames.keys)
+        let liveDisplayIDs = Set(currentLabels.keys)
         let staleDisplayIDs = entries.keys.filter { !liveDisplayIDs.contains($0) }
         for displayID in staleDisplayIDs {
             entries[displayID]?.panel.close()
@@ -286,12 +317,16 @@ final class PerDisplayMenuBarLabelManager: NSObject {
             floor((anchorWindow.frame.height - anchorButton.frame.height) / 2)
         )
 
-        for (displayID, title) in currentNames {
+        for (displayID, label) in currentLabels {
             guard let screen = DisplayResolver.screen(for: displayID) else { continue }
             let entry = entries[displayID] ?? makeEntry()
             entries[displayID] = entry
 
-            let controlWidth = entry.control.update(title: title, font: anchorButton.font)
+            let controlWidth = entry.control.update(
+                title: label.title,
+                color: label.color,
+                font: anchorButton.font
+            )
             let anchorRight = screen.frame.maxX - trailingOffset
             let labelFrame = NSRect(
                 x: anchorRight - controlWidth,
@@ -300,7 +335,7 @@ final class PerDisplayMenuBarLabelManager: NSObject {
                 height: anchorFrame.height
             )
             entry.control.frame = NSRect(origin: .zero, size: labelFrame.size)
-            entry.control.toolTip = "\(screen.localizedName): \(title)"
+            entry.control.toolTip = "\(screen.localizedName): \(label.title)"
             entry.panel.setFrame(labelFrame, display: true)
             entry.panel.orderFrontRegardless()
         }
@@ -317,7 +352,15 @@ final class PerDisplayMenuBarLabelManager: NSObject {
         panel.backgroundColor = .clear
         panel.hasShadow = false
         panel.level = .statusBar
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        // `.transient` keeps this menu-bar replacement out of Mission Control.
+        // The per-Space label windows intentionally omit it because those
+        // windows are the names rendered inside the workspace thumbnails.
+        panel.collectionBehavior = [
+            .canJoinAllSpaces,
+            .stationary,
+            .transient,
+            .ignoresCycle
+        ]
         panel.hidesOnDeactivate = false
         panel.ignoresMouseEvents = false
 
@@ -335,6 +378,7 @@ final class PerDisplayMenuBarLabelManager: NSObject {
     }
 
     private func showMenu(from control: LabelControl) {
+        menuOriginDisplayID = entries.first { $0.value.control === control }?.key
         menu.popUp(
             positioning: nil,
             at: NSPoint(x: control.bounds.midX, y: control.bounds.minY),

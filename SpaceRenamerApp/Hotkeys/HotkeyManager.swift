@@ -3,6 +3,7 @@ import KeyboardShortcuts
 
 extension KeyboardShortcuts.Name {
     static let openMenu = Self("openMenu")
+    static let moveFocusedWindow = Self("moveFocusedWindow")
     /// `id` is the restart-stable `ParsedSpace.storageID` (uuid / "primary"),
     /// NOT the session-scoped ManagedSpaceID — Design Revision 2026-06-09.
     static func space(_ id: String) -> Self { Self("space.\(id)") }
@@ -14,12 +15,17 @@ final class HotkeyManager {
     var onSpaceHotkey: ((String) -> Void)?
     /// Fired when the open-menu hotkey is pressed.
     var onOpenMenu: (() -> Void)?
+    /// Fired when the move-focused-window picker hotkey is pressed.
+    var onMoveFocusedWindow: (() -> Void)?
 
     private var registeredIDs: Set<String> = []
 
     init() {
         KeyboardShortcuts.onKeyUp(for: .openMenu) { [weak self] in
             self?.onOpenMenu?()
+        }
+        KeyboardShortcuts.onKeyUp(for: .moveFocusedWindow) { [weak self] in
+            self?.onMoveFocusedWindow?()
         }
     }
 

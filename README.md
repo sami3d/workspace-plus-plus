@@ -42,8 +42,11 @@ approval when upgrading.
   menu-bar item.
 - Per-display labels are independently measured, clickable across their full
   width, and aligned to macOS's native status-item spacing.
-- A sky-blue label makes the active workspace easy to find without overpowering
-  the rest of the menu bar.
+- The active workspace name uses the colour assigned to that workspace in
+  Preferences, and updates immediately when the colour changes.
+- The menu lists the display you opened it from first, so the Spaces at the top
+  are always the ones on the screen you are looking at. Remaining displays keep
+  their usual order below.
 
 ### Three ways to switch
 
@@ -57,11 +60,30 @@ sends the selected stable ID back through a local request file. It does not
 scrape the menu bar, automate clicks, use a network service, or maintain a
 second list of names.
 
+### Move a focused window directly
+
+- Open **Move Focused Window…** from the Workspace++ menu or assign its global
+  shortcut in Preferences.
+- Search the live workspace names with the keyboard—no Raycast dependency.
+- Press **Return** to move the captured window directly to the selected Space
+  while staying in the current workspace, or **Option-Return** to move it and
+  follow it to the destination.
+- Regular application windows are supported; macOS full-screen and tiled
+  windows cannot be reassigned to another desktop.
+
 ### Mission Control labels
 
 - Optional large name banners on non-active Mission Control thumbnails.
 - A brief switch-in label confirms where you landed.
 - Per-Space overlay windows are anchored to the correct physical display.
+- Give each workspace its own banner colour in Preferences; label text adjusts
+  automatically for contrast.
+- Choose whether Mission Control keeps app windows visible behind a centred
+  name band or uses a full-screen colour wash, and adjust background opacity
+  independently from the fully opaque text.
+- A Preferences legend documents the shared colour convention: Work (blue),
+  Hobby (pink), Empty screens (green), Mixed (grey), Unsorted windows (red),
+  and Personal tasks (brown).
 
 ### Flexible switching engine
 
@@ -77,7 +99,7 @@ second list of names.
 - Live display names and active-state checkmarks.
 - Helpful warnings when required Mission Control shortcuts or Accessibility
   permission are missing.
-- 82 fast core tests plus CI builds for the AppKit app and Raycast extension.
+- 89 fast core tests plus CI builds for the AppKit app and Raycast extension.
 
 ## Requirements
 
@@ -128,7 +150,10 @@ updates.
    - separate or combined menu-bar names;
    - switching mode;
    - Mission Control labels;
+   - a background colour for each workspace label;
+   - whether app windows remain visible and the name-background opacity;
    - global shortcuts;
+   - the Move Focused Window picker shortcut;
    - Launch at Login.
 4. In Raycast, search **Switch Space** and optionally assign it a global
    shortcut.
@@ -190,8 +215,9 @@ real-machine findings remain in `docs/superpowers/`.
 - The app has no analytics, account, cloud sync, or runtime network service.
 - The Raycast bridge uses files under
   `~/Library/Application Support/Space Renamer/`.
-- The read-only private SkyLight symbol is resolved at runtime solely to detect
-  the active Space. Switching uses public `CGEvent` keyboard events.
+- Private SkyLight symbols are resolved at runtime to detect active Spaces and
+  place optional Mission Control overlays. Space switching and direct,
+  user-requested window transfers use local `CGEvent` input events.
 
 ## Known limitations
 
@@ -204,6 +230,8 @@ real-machine findings remain in `docs/superpowers/`.
   snapshots the currently rendered Space after the transient label has faded.
 - Cross-display switching briefly repositions the pointer because macOS routes
   Mission Control shortcuts to the display containing it.
+- Direct window movement briefly carries the window through macOS's normal
+  animated Space transitions. The pointer is restored afterward.
 
 ## Raycast Store
 

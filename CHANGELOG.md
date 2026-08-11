@@ -4,7 +4,42 @@ All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.1.0] — 2026-08-11
+
+### Added
+- **The Workspace++ menu now leads with the display it was opened from.**
+  Clicking the label on an external monitor lists that monitor's Spaces first
+  and the built-in display's below it, instead of always using a fixed order.
+  Per-display mode identifies the clicked label exactly; combined mode falls
+  back to the pointer's screen, since macOS mirrors one status item onto every
+  menu bar.
+- **Move Focused Window** opens a native, keyboard-first workspace picker.
+  Search the live Workspace++ names and press Return to move the captured
+  window directly to that Space while staying put, or Option-Return to move it
+  and follow it to the destination. The picker has its own configurable
+  global shortcut and does not require Raycast.
+- **Per-workspace banner colours** can be assigned from Preferences. Each
+  Mission Control name banner uses its workspace's chosen background colour
+  and automatically switches between light and dark text for readability.
+- Active workspace names in the menu bar now use their assigned workspace
+  colours. Per-display mode updates each monitor independently, while combined
+  mode preserves the individual colour of every displayed name.
+- Mission Control appearance controls let users choose between a centered name
+  band that leaves app windows visible and a full-screen colour wash, and set
+  the coloured background opacity from 10 to 100 percent. Text remains fully
+  opaque in both layouts.
+- Preferences includes a colour-category legend: blue for Work, pink for
+  Hobby, green for Empty screens, grey for Mixed, red for Unsorted windows,
+  and brown for Personal tasks.
+
+### Fixed
+- Move-only now returns to the focused window's exact original managed Space
+  instead of inferring it from the monitor. Return navigation is confirmed
+  twice after animations settle, preventing a late queued key event from
+  leaving the user on a neighbouring Space.
+- Mission Control name banners now remain centered and inside the display.
+  Names use a consistent large font and wrap into as many as four centered
+  lines instead of shrinking long names into small single-line text.
 
 ## [1.0.0] — 2026-07-28
 
