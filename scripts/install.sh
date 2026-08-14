@@ -53,6 +53,10 @@ if [ ! -d "${BUILT_APP}" ]; then
   exit 1
 fi
 
+# macOS can truncate the process name for this bundle, so match its exact
+# executable path as well. This prevents an older in-memory build surviving
+# an otherwise successful install.
+pkill -f '^/Applications/Workspace[+][+][.]app/Contents/MacOS/Workspace[+][+]$' 2>/dev/null || true
 pkill -x "Workspace++" 2>/dev/null || true
 pkill -x SpaceRenamer 2>/dev/null || true
 

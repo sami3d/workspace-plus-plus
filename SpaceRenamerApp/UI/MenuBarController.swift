@@ -11,7 +11,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let switcher: SwitcherEngine
     private let openMoveWindowPicker: () -> Void
     private let openPreferences: () -> Void
+    private let applicationIndex = SpaceApplicationIndex()
     private var cancellables: Set<AnyCancellable> = []
+    private var commandKeyMonitor: Any?
     private let menu = NSMenu()
     private var perDisplayLabels: PerDisplayMenuBarLabelManager!
 
@@ -42,6 +44,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.autoenablesItems = false
         statusItem.menu = menu
         perDisplayLabels = PerDisplayMenuBarLabelManager(statusItem: statusItem, menu: menu)
+        installCommandKeyMonitor()
 
         Publishers.CombineLatest3(
             monitor.$spaces,
@@ -99,6 +102,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func populate() {
         menu.removeAllItems()
+        let rightAlignedApps = names.appIconDisplayMode == .rightAligned
+        let applicationsBySpace = applicationIndex.summariesBySpace(
+            // Count-based orders flow toward the alignment edge: most-used
+            // first in the left layout, and most-used last at the far right.
+            sortMode: names.appIconSortMode,
+            leastUsedFirst: rightAlignedApps
+        )
 
         // Arrow mode reaches any desktop; Ctrl+digit mode only the desktops
         // whose Ctrl+N is enabled & correctly bound (so grey the rest, incl.
@@ -118,7 +128,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             populateSpaces(display.spaces, in: menu,
                            activeID: display.activeID,
                            ctrlDigitMode: ctrlDigitMode,
-                           reachable: reachable)
+                           reachable: reachable,
+                           applicationsBySpace: applicationsBySpace)
         }
 
         if !monitor.spaces.isEmpty {
@@ -144,12 +155,33 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         )
         moveWindow.target = self
         menu.addItem(moveWindow)
-        let prefs = NSMenuItem(title: "Preferences…", action: #selector(prefsClicked), keyEquivalent: ",")
+        // Keep these key equivalents out of this status menu. AppKit otherwise
+        // reserves a wide shortcut column across every workspace row. The
+        // shortcuts themselves are preserved by installCommandKeyMonitor().
+        let prefs = NSMenuItem(title: "Preferences…", action: #selector(prefsClicked), keyEquivalent: "")
         prefs.target = self
         menu.addItem(prefs)
-        let quit = NSMenuItem(title: "Quit Workspace++", action: #selector(quitClicked), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit Workspace++", action: #selector(quitClicked), keyEquivalent: "")
         quit.target = self
         menu.addItem(quit)
+    }
+
+    private func installCommandKeyMonitor() {
+        commandKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+            [weak self] event in
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard modifiers == .command else { return event }
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case ",":
+                self?.openPreferences()
+                return nil
+            case "q":
+                NSApp.terminate(nil)
+                return nil
+            default:
+                return event
+            }
+        }
     }
 
     /// The display the menu was opened from leads, so the desktops you can see
@@ -181,13 +213,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func populateSpaces(_ spaces: [ParsedSpace], in targetMenu: NSMenu,
                                 activeID: String?, ctrlDigitMode: Bool,
-                                reachable: Set<Int>) {
+                                reachable: Set<Int>,
+                                applicationsBySpace: [String: [SpaceApplicationSummary]]) {
         let menuFont = NSFont.menuFont(ofSize: 0)
-        let widestName = spaces
-            .map { (names.name(for: $0.storageID, defaultOrdinal: $0.ordinal) as NSString)
-                .size(withAttributes: [.font: menuFont]).width }
-            .max() ?? 0
-        let shortcutTabX = ceil(widestName) + 36
 
         for space in spaces {
             let title = names.name(for: space.storageID, defaultOrdinal: space.ordinal)
@@ -195,6 +223,12 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             item.target = self
             item.representedObject = space.id
             item.indentationLevel = 1
+            item.image = workspaceSwatch(
+                hex: names.colorHex(for: space.storageID)
+            )
+            if let category = names.category(for: space.storageID) {
+                item.toolTip = "Category: \(category.name)"
+            }
             if space.id == activeID { item.state = .on }
             if ctrlDigitMode && !reachable.contains(space.ordinal) {
                 item.isEnabled = false
@@ -202,16 +236,30 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                     ? "Ctrl+1\u{2013}9 can\u{2019}t reach desktop \(space.ordinal). Switch to \u{201C}Move a space\u{201D} mode in Preferences."
                     : "Enable \u{201C}Switch to Desktop \(space.ordinal)\u{201D} (Ctrl+\(space.ordinal)) in System Settings \u{2192} Keyboard \u{2192} Keyboard Shortcuts \u{2192} Mission Control, or use \u{201C}Move a space\u{201D} mode."
             }
-            // Read-only hint of the per-desktop global hotkey (set in
-            // Preferences). Enabled rows only — disabled rows keep the plain
-            // title so AppKit's dimming isn't fought. Not a keyEquivalent, so
-            // the ⌥-Rename alternate pairing and global hotkeys are untouched.
-            if item.isEnabled,
-               let shortcut = KeyboardShortcuts.getShortcut(for: .space(space.storageID)) {
-                item.attributedTitle = shortcutHintTitle(name: title,
-                                                         shortcut: shortcut.description,
-                                                         font: menuFont,
-                                                         tabX: shortcutTabX)
+            let applications = applicationsBySpace[space.id] ?? []
+            let shortcut = item.isEnabled
+                ? KeyboardShortcuts.getShortcut(for: .space(space.storageID))?.description
+                : nil
+            if !applications.isEmpty || shortcut != nil {
+                item.attributedTitle = workspaceMenuTitle(
+                    name: title,
+                    applications: applications,
+                    shortcut: shortcut,
+                    font: menuFont,
+                    displayMode: names.appIconDisplayMode,
+                    windowMode: names.appIconWindowMode
+                )
+                let appDescription = applications.map {
+                    $0.windowCount > 1 ? "\($0.name) (\($0.windowCount))" : $0.name
+                }.joined(separator: ", ")
+                if !appDescription.isEmpty {
+                    let totalWindows = applications.reduce(0) { $0 + $1.windowCount }
+                    let categoryDescription = names.category(for: space.storageID)
+                        .map { "Category: \($0.name)\n" } ?? ""
+                    item.toolTip = categoryDescription
+                        + "\(totalWindows) window\(totalWindows == 1 ? "" : "s") total\n"
+                        + appDescription
+                }
             }
             targetMenu.addItem(item)
 
@@ -228,23 +276,346 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    /// `name` left-aligned, `shortcut` in a muted aligned column at `tabX`.
-    private func shortcutHintTitle(name: String, shortcut: String,
-                                   font: NSFont, tabX: CGFloat) -> NSAttributedString {
+    /// Compact category cue shown immediately before every workspace name.
+    /// A subtle outline keeps dark/neutral categories visible in dark menus.
+    private func workspaceSwatch(hex: String?) -> NSImage {
+        let size = NSSize(width: 11, height: 11)
+        let image = NSImage(size: size, flipped: false) { rect in
+            let path = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5),
+                                    xRadius: 2.5, yRadius: 2.5)
+            WorkspaceColor.color(from: hex).setFill()
+            path.fill()
+            NSColor.separatorColor.setStroke()
+            path.lineWidth = 1
+            path.stroke()
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+
+    /// A bounded native-menu title: independently truncated workspace name,
+    /// followed by compact app icons/counts and an optional shortcut. This
+    /// preserves standard menu highlighting, keyboard navigation and actions.
+    private func workspaceMenuTitle(
+        name: String,
+        applications: [SpaceApplicationSummary],
+        shortcut: String?,
+        font: NSFont,
+        displayMode: AppIconDisplayMode,
+        windowMode: AppIconWindowMode
+    ) -> NSAttributedString {
+        switch displayMode {
+        case .leftAligned:
+            return leftAlignedWorkspaceMenuTitle(
+                name: name,
+                applications: applications,
+                shortcut: shortcut,
+                font: font,
+                windowMode: windowMode
+            )
+        case .rightAligned:
+            return rightAlignedWorkspaceMenuTitle(
+                name: name,
+                applications: applications,
+                shortcut: shortcut,
+                font: font,
+                windowMode: windowMode
+            )
+        }
+    }
+
+    private func leftAlignedWorkspaceMenuTitle(
+        name: String,
+        applications: [SpaceApplicationSummary],
+        shortcut: String?,
+        font: NSFont,
+        windowMode: AppIconWindowMode
+    ) -> NSAttributedString {
+        let applicationTabX: CGFloat = 285
+        // Keep the total inside the native menu's usable content width. A tab
+        // beyond this point is clipped by AppKit, which looks like unexplained
+        // empty trailing space and hides the total entirely.
+        let totalTabX: CGFloat = 400
+        let iconSize: CGFloat = 13
+        let numberFont = NSFont.systemFont(ofSize: 10, weight: .semibold)
         let paragraph = NSMutableParagraphStyle()
-        paragraph.tabStops = [NSTextTab(textAlignment: .left, location: tabX)]
-        paragraph.lineBreakMode = .byTruncatingTail
+        paragraph.tabStops = [
+            NSTextTab(textAlignment: .left, location: applicationTabX),
+            NSTextTab(textAlignment: .right, location: totalTabX),
+        ]
+        paragraph.lineBreakMode = .byClipping
+        let secondaryAttributes: [NSAttributedString.Key: Any] = [
+            .font: numberFont,
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .baselineOffset: 1,
+        ]
+
+        let shortcutWidth: CGFloat = shortcut.map {
+            ($0 as NSString).size(withAttributes: [.font: font]).width + 14
+        } ?? 0
+        let totalWindowCount = applications.reduce(0) { $0 + $1.windowCount }
+        // Preserve the existing detailed total only in counter mode. The two
+        // icon-only modes contain no numeric window labels by design.
+        let totalText = windowMode == .windowCounters && totalWindowCount > 0
+            ? "\(totalWindowCount)" : nil
+        let totalWidth: CGFloat = totalText.map {
+            ($0 as NSString).size(withAttributes: [.font: numberFont]).width + 16
+        } ?? 0
+        let availableApplicationWidth = max(
+            70,
+            totalTabX - applicationTabX - shortcutWidth - totalWidth
+        )
+
+        let tokens = appIconTokens(applications, windowMode: windowMode)
+        var selected: [AppIconToken] = []
+        var applicationWidth: CGFloat = 0
+        for token in tokens {
+            let countWidth = token.windowCount.map {
+                ("\u{2009}\($0)" as NSString)
+                    .size(withAttributes: secondaryAttributes).width + 1
+            } ?? 0
+            let tokenWidth = iconSize + countWidth + 6
+            guard selected.count < 10,
+                  applicationWidth + tokenWidth <= availableApplicationWidth else { break }
+            selected.append(token)
+            applicationWidth += tokenWidth
+        }
+        var hiddenCount = tokens.count - selected.count
+        let showsOverflowCount = windowMode == .windowCounters
+        var hiddenWidth: CGFloat = showsOverflowCount && hiddenCount > 0
+            ? ("+\(hiddenCount)" as NSString)
+                .size(withAttributes: secondaryAttributes).width + 7
+            : 0
+        while !selected.isEmpty,
+              applicationWidth + hiddenWidth > availableApplicationWidth {
+            let removed = selected.removeLast()
+            let removedCountWidth = removed.windowCount.map {
+                ("\u{2009}\($0)" as NSString)
+                    .size(withAttributes: secondaryAttributes).width + 1
+            } ?? 0
+            applicationWidth -= iconSize + removedCountWidth + 6
+            hiddenCount += 1
+            hiddenWidth = showsOverflowCount
+                ? ("+\(hiddenCount)" as NSString)
+                    .size(withAttributes: secondaryAttributes).width + 7
+                : 0
+        }
+
+        // Leave a 16-point safety gap before the right-side icon column.
+        let nameWidth = applicationTabX - 16
+        let visibleName = truncated(name, font: font, maximumWidth: nameWidth)
         let result = NSMutableAttributedString(
-            string: name,
+            string: visibleName,
             attributes: [.font: font,
                          .foregroundColor: NSColor.labelColor,
                          .paragraphStyle: paragraph])
-        result.append(NSAttributedString(
-            string: "\t\(shortcut)",
-            attributes: [.font: font,
-                         .foregroundColor: NSColor.secondaryLabelColor,
-                         .paragraphStyle: paragraph]))
+
+        if !selected.isEmpty || shortcut != nil {
+            result.append(NSAttributedString(
+                string: "\t",
+                attributes: [.paragraphStyle: paragraph]
+            ))
+        }
+        if !selected.isEmpty {
+            for token in selected {
+                let attachment = NSTextAttachment()
+                let icon = (token.application.icon.copy() as? NSImage)
+                    ?? token.application.icon
+                icon.size = NSSize(width: iconSize, height: iconSize)
+                attachment.image = icon
+                attachment.bounds = NSRect(x: 0, y: -2, width: iconSize, height: iconSize)
+                result.append(NSAttributedString(attachment: attachment))
+                if let windowCount = token.windowCount, windowCount > 1 {
+                    result.append(NSAttributedString(
+                        string: "\u{2009}\(windowCount)",
+                        attributes: secondaryAttributes
+                    ))
+                } else if token.windowCount != nil {
+                    // A clear text colour is not reliable in NSMenu: AppKit
+                    // can replace it while highlighting. Reserve the exact
+                    // width with an empty transparent attachment instead, so
+                    // there is no “1” glyph that can ever become visible.
+                    let spacerWidth = ("\u{2009}1" as NSString)
+                        .size(withAttributes: secondaryAttributes).width + 1
+                    let spacer = NSTextAttachment()
+                    spacer.image = NSImage(size: NSSize(width: spacerWidth, height: 1))
+                    spacer.bounds = NSRect(x: 0, y: 0, width: spacerWidth, height: 1)
+                    result.append(NSAttributedString(attachment: spacer))
+                }
+                result.append(NSAttributedString(string: " "))
+            }
+            if showsOverflowCount && hiddenCount > 0 {
+                result.append(NSAttributedString(
+                    string: "+\(hiddenCount)",
+                    attributes: secondaryAttributes
+                ))
+            }
+        }
+        if let shortcut {
+            result.append(NSAttributedString(
+                string: "  \(shortcut)",
+                attributes: [
+                    .font: font,
+                    .foregroundColor: NSColor.secondaryLabelColor,
+                ]
+            ))
+        }
+        if let totalText {
+            result.append(NSAttributedString(
+                string: "\t\(totalText)",
+                attributes: [
+                    .font: numberFont,
+                    .foregroundColor: NSColor.secondaryLabelColor,
+                    .paragraphStyle: paragraph,
+                ]
+            ))
+        }
         return result
+    }
+
+    /// Right-aligned alternative. The final token is anchored against the
+    /// menu's right content edge. Input count-based orders are already least
+    /// used → most used, so the most-used app remains visually last. When
+    /// space is tight, discard left-edge tokens and retain the rightmost ones.
+    private func rightAlignedWorkspaceMenuTitle(
+        name: String,
+        applications: [SpaceApplicationSummary],
+        shortcut: String?,
+        font: NSFont,
+        windowMode: AppIconWindowMode
+    ) -> NSAttributedString {
+        let iconColumnStartX: CGFloat = 285
+        let iconColumnEndX: CGFloat = 400
+        let iconSize: CGFloat = 13
+        let iconGap: CGFloat = 5
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.tabStops = [
+            NSTextTab(textAlignment: .right, location: iconColumnEndX),
+        ]
+        paragraph.lineBreakMode = .byClipping
+
+        let shortcutWidth: CGFloat = shortcut.map {
+            ($0 as NSString).size(withAttributes: [.font: font]).width + 12
+        } ?? 0
+        let availableIconWidth = max(
+            iconSize,
+            iconColumnEndX - iconColumnStartX - shortcutWidth
+        )
+        let numberFont = NSFont.systemFont(ofSize: 10, weight: .semibold)
+        let countAttributes: [NSAttributedString.Key: Any] = [
+            .font: numberFont,
+            .foregroundColor: NSColor.secondaryLabelColor,
+            .baselineOffset: 1,
+        ]
+        let tokens = appIconTokens(applications, windowMode: windowMode)
+        var selected: [AppIconToken] = []
+        var selectedWidth: CGFloat = 0
+        // Walk from most-used back toward least-used so the most important
+        // right-edge icons always survive a constrained row.
+        for token in tokens.reversed() {
+            let countWidth = token.windowCount.map {
+                ("\u{2009}\($0)" as NSString)
+                    .size(withAttributes: countAttributes).width + 1
+            } ?? 0
+            let tokenWidth = iconSize + countWidth + (selected.isEmpty ? 0 : iconGap)
+            guard selected.count < 10,
+                  selectedWidth + tokenWidth <= availableIconWidth else { break }
+            selected.insert(token, at: 0)
+            selectedWidth += tokenWidth
+        }
+
+        let visibleName = truncated(
+            name,
+            font: font,
+            maximumWidth: iconColumnStartX - 16
+        )
+        let result = NSMutableAttributedString(
+            string: visibleName,
+            attributes: [
+                .font: font,
+                .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: paragraph,
+            ]
+        )
+        guard !selected.isEmpty || shortcut != nil else { return result }
+        result.append(NSAttributedString(
+            string: "\t",
+            attributes: [.paragraphStyle: paragraph]
+        ))
+        if let shortcut {
+            result.append(NSAttributedString(
+                string: "\(shortcut)  ",
+                attributes: [
+                    .font: font,
+                    .foregroundColor: NSColor.secondaryLabelColor,
+                ]
+            ))
+        }
+        for (index, token) in selected.enumerated() {
+            if index > 0 {
+                result.append(NSAttributedString(string: " "))
+            }
+            let attachment = NSTextAttachment()
+            let icon = (token.application.icon.copy() as? NSImage)
+                ?? token.application.icon
+            icon.size = NSSize(width: iconSize, height: iconSize)
+            attachment.image = icon
+            attachment.bounds = NSRect(x: 0, y: -2, width: iconSize, height: iconSize)
+            result.append(NSAttributedString(attachment: attachment))
+            if let windowCount = token.windowCount, windowCount > 1 {
+                result.append(NSAttributedString(
+                    string: "\u{2009}\(windowCount)",
+                    attributes: countAttributes
+                ))
+            } else if token.windowCount != nil {
+                let spacerWidth = ("\u{2009}1" as NSString)
+                    .size(withAttributes: countAttributes).width + 1
+                let spacer = NSTextAttachment()
+                spacer.image = NSImage(size: NSSize(width: spacerWidth, height: 1))
+                spacer.bounds = NSRect(x: 0, y: 0, width: spacerWidth, height: 1)
+                result.append(NSAttributedString(attachment: spacer))
+            }
+        }
+        return result
+    }
+
+    private struct AppIconToken {
+        let application: SpaceApplicationSummary
+        /// Non-nil only for the counter presentation. A value of one reserves
+        /// its count column with an invisible spacer to keep icons aligned.
+        let windowCount: Int?
+    }
+
+    private func appIconTokens(
+        _ applications: [SpaceApplicationSummary],
+        windowMode: AppIconWindowMode
+    ) -> [AppIconToken] {
+        switch windowMode {
+        case .iconsOnly:
+            return applications.map { AppIconToken(application: $0, windowCount: nil) }
+        case .windowCounters:
+            return applications.map {
+                AppIconToken(application: $0, windowCount: $0.windowCount)
+            }
+        case .repeatedIcons:
+            return applications.flatMap { application in
+                Array(repeating: AppIconToken(application: application, windowCount: nil),
+                      count: application.windowCount)
+            }
+        }
+    }
+
+    private func truncated(_ value: String, font: NSFont, maximumWidth: CGFloat) -> String {
+        let attributes: [NSAttributedString.Key: Any] = [.font: font]
+        guard (value as NSString).size(withAttributes: attributes).width > maximumWidth
+        else { return value }
+        var result = value
+        while !result.isEmpty,
+              ((result + "…") as NSString).size(withAttributes: attributes).width > maximumWidth {
+            result.removeLast()
+        }
+        return result + "…"
     }
 
     private func refreshTitle() {

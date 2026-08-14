@@ -39,4 +39,9 @@ EOF
   -inkey "$WORK/k.pem" -in "$WORK/c.pem" -out "$WORK/id.p12" -passout pass:srdev -name "$NAME"
 security import "$WORK/id.p12" -k "$HOME/Library/Keychains/login.keychain-db" \
   -P srdev -A -T /usr/bin/codesign
+# A self-signed identity must be trusted before `find-identity -p codesigning`
+# considers it valid. Keep this in the user's trust domain; no administrator
+# access or system-wide trust change is needed.
+security add-trusted-cert -r trustRoot \
+  -k "$HOME/Library/Keychains/login.keychain-db" "$WORK/c.pem"
 echo "Created code-signing identity '$NAME'. Now run: xcodegen generate && build."

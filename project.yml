@@ -34,6 +34,10 @@ targets:
         LSUIElement: true
         NSSupportsAutomaticTermination: false
         NSSupportsSuddenTermination: false
+        WorkspaceCloudURL: https://djzumrvobmvfspnmxnqr.supabase.co
+        # Safe to embed in the desktop client. Access is enforced by Auth + RLS;
+        # never replace this with a secret/service-role key.
+        WorkspaceCloudPublishableKey: sb_publishable_pUG_lQD49bjeZWl7WBWEiQ_LJf9tXFs
     settings:
       base:
         # Keep the historical target/module and bundle identifier for upgrade
