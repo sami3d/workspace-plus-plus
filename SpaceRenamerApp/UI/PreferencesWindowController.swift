@@ -128,7 +128,9 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
         categoryCol.title = "Category"; categoryCol.width = 150
         let hotkeyCol = NSTableColumn(identifier: .init("hotkey"))
         hotkeyCol.title = "Hotkey"; hotkeyCol.width = 145
-        [displayCol, nameCol, categoryCol, hotkeyCol].forEach(table.addTableColumn)
+        [displayCol, nameCol, categoryCol, hotkeyCol].forEach {
+            table.addTableColumn($0)
+        }
         table.dataSource = self
         table.delegate = self
         table.headerView = NSTableHeaderView()
@@ -144,7 +146,9 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
         rename.title = ""; rename.width = 85
         let delete = NSTableColumn(identifier: .init("categoryDelete"))
         delete.title = ""; delete.width = 85
-        [name, color, rename, delete].forEach(categoryTable.addTableColumn)
+        [name, color, rename, delete].forEach {
+            categoryTable.addTableColumn($0)
+        }
         categoryTable.dataSource = self
         categoryTable.delegate = self
         categoryTable.headerView = NSTableHeaderView()
