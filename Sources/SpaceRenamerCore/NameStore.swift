@@ -194,7 +194,10 @@ public final class NameStore {
         let affected = assignments.compactMap { $0.value == id ? $0.key : nil }
         affected.forEach { assignments.removeValue(forKey: $0) }
         categoryAssignments = assignments
-        affected.forEach(markWorkspaceModified)
+        // Keep the closure explicit for Swift 6.0/Xcode 16.2. Passing this
+        // actor-isolated method directly is misdiagnosed as a throwing
+        // function by that compiler and breaks our macOS 14 CI build.
+        affected.forEach { markWorkspaceModified($0) }
         postCategoryChange()
     }
 
