@@ -60,6 +60,43 @@ import XCTest
         XCTAssertNil(store.colorHex(for: "42"))
     }
 
+    func test_defaultCategories_includeRequestedStarterSet() {
+        let categoryNames = Set(store.categories.map(\.name))
+        XCTAssertTrue(Set([
+            "Work", "Hobby", "Zen", "Misc", "Unsorted windows",
+            "Personal tasks", "Entertainment", "Medical",
+        ]).isSubset(of: categoryNames))
+    }
+
+    func test_categoryAssignment_usesCategoryColorAndPersists() {
+        let work = store.categories.first { $0.name == "Work" }!
+        store.setCategory(work.id, for: "42")
+        XCTAssertEqual(store.categoryID(for: "42"), work.id)
+        XCTAssertEqual(store.colorHex(for: "42"), work.colorHex)
+
+        let reborn = NameStore(defaults: defaults)
+        XCTAssertEqual(reborn.categoryID(for: "42"), work.id)
+        XCTAssertEqual(reborn.colorHex(for: "42"), work.colorHex)
+    }
+
+    func test_recolourCategory_updatesEveryAssignedWorkspace() {
+        let work = store.categories.first { $0.name == "Work" }!
+        store.setCategory(work.id, for: "42")
+        store.setCategory(work.id, for: "43")
+        store.updateCategory(id: work.id, colorHex: "123abc")
+        XCTAssertEqual(store.colorHex(for: "42"), "123ABC")
+        XCTAssertEqual(store.colorHex(for: "43"), "123ABC")
+    }
+
+    func test_deleteCategory_uncategorisesAssignedWorkspaces() {
+        let category = store.addCategory(name: "Temporary", colorHex: "123456")
+        store.setCategory(category.id, for: "42")
+        store.deleteCategory(id: category.id)
+        XCTAssertNil(store.categoryID(for: "42"))
+        XCTAssertFalse(store.categories.contains { $0.id == category.id })
+        XCTAssertTrue(store.allCategoryRecords.first { $0.id == category.id }?.isDeleted == true)
+    }
+
     func test_setColorHex_normalizesAndPersists() {
         store.setColorHex("42", "#2a9df4")
         XCTAssertEqual(store.colorHex(for: "42"), "2A9DF4")
@@ -76,6 +113,45 @@ import XCTest
 
         store.setColorHex("42", "2A9DF4")
         store.setColorHex("42", nil)
+        XCTAssertNil(store.colorHex(for: "42"))
+    }
+
+    func test_localNameAndColorEditsRecordModificationTime() {
+        XCTAssertEqual(store.workspaceModifiedAt(for: "42"), .distantPast)
+        let before = Date()
+        store.setName("42", "Research")
+        XCTAssertGreaterThanOrEqual(store.workspaceModifiedAt(for: "42"), before)
+
+        let firstEdit = store.workspaceModifiedAt(for: "42")
+        store.setColorHex("42", "112233")
+        XCTAssertGreaterThanOrEqual(store.workspaceModifiedAt(for: "42"), firstEdit)
+    }
+
+    func test_applyCloudValues_persistsValuesAndCloudTimestamp() {
+        let cloudDate = Date(timeIntervalSince1970: 1_700_000_000)
+        store.applyCloudValues(
+            for: "42",
+            name: "Cloud Research",
+            colorHex: "aabbcc",
+            modifiedAt: cloudDate
+        )
+
+        let reborn = NameStore(defaults: defaults)
+        XCTAssertEqual(reborn.storedName(for: "42"), "Cloud Research")
+        XCTAssertEqual(reborn.colorHex(for: "42"), "AABBCC")
+        XCTAssertEqual(reborn.workspaceModifiedAt(for: "42"), cloudDate)
+    }
+
+    func test_applyCloudValues_nilClearsNameAndColor() {
+        store.setName("42", "Local")
+        store.setColorHex("42", "112233")
+        store.applyCloudValues(
+            for: "42",
+            name: nil,
+            colorHex: nil,
+            modifiedAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        XCTAssertNil(store.storedName(for: "42"))
         XCTAssertNil(store.colorHex(for: "42"))
     }
 
@@ -128,6 +204,56 @@ import XCTest
     func test_menuBarDisplayMode_invalidStoredValue_fallsBackToDefault() {
         defaults.set("bogus", forKey: "SpaceRenamer.menuBarDisplayMode")
         XCTAssertEqual(NameStore(defaults: defaults).menuBarDisplayMode, .perDisplay)
+    }
+
+    func test_appIconSortMode_defaultsToGlobalWindowCount() {
+        XCTAssertEqual(store.appIconSortMode, .globalWindowCount)
+        XCTAssertEqual(AppIconSortMode.default, .globalWindowCount)
+    }
+
+    func test_appIconSortMode_roundTripsAcrossReconstruction() {
+        store.appIconSortMode = .alphabetical
+        XCTAssertEqual(NameStore(defaults: defaults).appIconSortMode, .alphabetical)
+    }
+
+    func test_appIconSortMode_invalidStoredValue_fallsBackToDefault() {
+        defaults.set("bogus", forKey: "SpaceRenamer.appIconSortMode")
+        XCTAssertEqual(NameStore(defaults: defaults).appIconSortMode, .globalWindowCount)
+    }
+
+    func test_appIconDisplayMode_defaultsToLeftAligned() {
+        XCTAssertEqual(store.appIconDisplayMode, .leftAligned)
+        XCTAssertEqual(AppIconDisplayMode.default, .leftAligned)
+    }
+
+    func test_appIconDisplayMode_roundTripsAcrossReconstruction() {
+        store.appIconDisplayMode = .rightAligned
+        XCTAssertEqual(NameStore(defaults: defaults).appIconDisplayMode, .rightAligned)
+    }
+
+    func test_appIconDisplayMode_invalidStoredValue_fallsBackToDefault() {
+        defaults.set("bogus", forKey: "SpaceRenamer.appIconDisplayMode")
+        XCTAssertEqual(NameStore(defaults: defaults).appIconDisplayMode, .leftAligned)
+    }
+
+    func test_appIconWindowMode_defaultsToCountersForLeftAlignment() {
+        XCTAssertEqual(store.appIconWindowMode, .windowCounters)
+        XCTAssertEqual(AppIconWindowMode.default, .windowCounters)
+    }
+
+    func test_appIconWindowMode_preservesLegacyRightAlignedAppearance() {
+        store.appIconDisplayMode = .rightAligned
+        XCTAssertEqual(store.appIconWindowMode, .iconsOnly)
+    }
+
+    func test_appIconWindowMode_roundTripsAcrossReconstruction() {
+        store.appIconWindowMode = .repeatedIcons
+        XCTAssertEqual(NameStore(defaults: defaults).appIconWindowMode, .repeatedIcons)
+    }
+
+    func test_appIconWindowMode_invalidStoredValue_fallsBackToDefault() {
+        defaults.set("bogus", forKey: "SpaceRenamer.appIconWindowMode")
+        XCTAssertEqual(NameStore(defaults: defaults).appIconWindowMode, .windowCounters)
     }
 
     func test_migrateKeys_movesNamesToNewKeys() {

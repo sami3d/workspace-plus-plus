@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeys: HotkeyManager!
     private var overlay: SpaceLabelOverlayManager!
     private var moveWindowPicker: MoveWindowPickerController!
+    private var cloudSync: CloudSyncManager!
     private var prefs: PreferencesWindowController?
     private var spaceIDsObserver: AnyCancellable?
     private var raycastSpaceObserver: AnyCancellable?
@@ -24,6 +25,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // bundle id as a `suiteName` — UserDefaults rejects that as nonsensical.
         names = NameStore()
         monitor = SpaceMonitor()
+        cloudSync = CloudSyncManager(monitor: monitor, names: names)
 
         // One-shot migration of MSID-keyed names + hotkeys to restart-stable
         // storage IDs (uuid / "primary") — Design Revision 2026-06-09. Needs a
@@ -99,6 +101,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.switchToRaycastStorageID(storageID)
         }
 
+        cloudSync.start()
+
         // Defer the first-run alerts off the synchronous launch path so the
         // status item appears first and the modal isn't the very first thing
         // the user sees on a cold start (#31).
@@ -134,6 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             prefs = PreferencesWindowController(
                 monitor: monitor,
                 names: names,
+                cloud: cloudSync,
                 overlayChanged: { [weak self] enabled in
                     self?.overlay.setEnabled(enabled)
                 }

@@ -26,5 +26,9 @@
 	<false/>
 	<key>NSSupportsSuddenTermination</key>
 	<false/>
+	<key>WorkspaceCloudURL</key>
+	<string>https://djzumrvobmvfspnmxnqr.supabase.co</string>
+	<key>WorkspaceCloudPublishableKey</key>
+	<string>sb_publishable_pUG_lQD49bjeZWl7WBWEiQ_LJf9tXFs</string>
 </dict>
 </plist>

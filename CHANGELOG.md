@@ -4,6 +4,41 @@ All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- Automatic cloud sync no longer cancels its own in-flight request or displays
+  a misleading red “cancelled” status.
+
+### Added
+- App-icon alignment and window representation are now independent settings.
+  Both left- and right-aligned layouts can show one icon per app, an icon with
+  its window counter, or one repeated app icon for every open window.
+- Optional right-aligned app-icon showcase for workspace menu rows. This
+  compact mode removes window counts and keeps the most globally used app at
+  the far-right edge; the existing detailed left-aligned layout remains the
+  default and both modes are selectable in General preferences.
+- Workspace menu rows now show compact application icons for windows belonging
+  to that Space. A small number beside an icon reports multiple windows from
+  the same app; long names and large app sets are bounded with truncation and
+  a compact overflow count.
+- Workspace categories replace one-off colour selection. Assign Work, Hobby,
+  Zen, Misc, Unsorted windows, Personal tasks, Entertainment, Medical, or a
+  custom category from each workspace's dropdown.
+- A dedicated Categories Preferences tab supports adding, renaming,
+  recolouring, and deleting categories. Changes update every assigned
+  workspace and are included in cloud sync.
+- Preferences is now organised into Workspaces, Categories, General, and
+  Cloud Sync tabs.
+- Optional Workspace++ accounts and cloud sync for workspace names, colours,
+  monitor placement, and per-monitor workspace order. Sync remains local-first,
+  works offline, stores sessions in macOS Keychain, and maps a different Mac's
+  Spaces by monitor/workspace position when their macOS UUIDs differ.
+- Manual **Sync Now** and cloud-authoritative **Restore from Cloud** controls
+  in Preferences.
+- Dedicated Supabase backend schema with owner-only row-level security. The
+  public desktop client contains only a publishable key; no admin/service key.
+
 ## [1.1.0] — 2026-08-11
 
 ### Added

@@ -19,6 +19,9 @@ Control Spaces as real workspaces. Give every Space a memorable name, see the
 right name on each monitor, and switch by menu, global shortcut, or dynamic
 Raycast search.
 
+Cloud sync is optional. Users who enable it can carry their workspace names,
+colours, monitor placement, and ordering to another Mac without iCloud.
+
 The project is a maintained product fork of
 [Space Renamer](https://github.com/noobomancer/space-renamer) by Alex Shirov.
 Workspace++ retains the original MIT notice and its internal compatibility
@@ -76,14 +79,14 @@ second list of names.
 - Optional large name banners on non-active Mission Control thumbnails.
 - A brief switch-in label confirms where you landed.
 - Per-Space overlay windows are anchored to the correct physical display.
-- Give each workspace its own banner colour in Preferences; label text adjusts
-  automatically for contrast.
+- Assign each workspace a reusable category in Preferences. Categories own
+  their colour, can be added, renamed, recoloured, or deleted, and update every
+  assigned workspace at once; label text adjusts automatically for contrast.
 - Choose whether Mission Control keeps app windows visible behind a centred
   name band or uses a full-screen colour wash, and adjust background opacity
   independently from the fully opaque text.
-- A Preferences legend documents the shared colour convention: Work (blue),
-  Hobby (pink), Empty screens (green), Mixed (grey), Unsorted windows (red),
-  and Personal tasks (brown).
+- The Categories tab starts with Work, Hobby, Zen, Misc, Unsorted windows,
+  Personal tasks, Entertainment, and Medical, while remaining fully editable.
 
 ### Flexible switching engine
 
@@ -99,7 +102,18 @@ second list of names.
 - Live display names and active-state checkmarks.
 - Helpful warnings when required Mission Control shortcuts or Accessibility
   permission are missing.
-- 89 fast core tests plus CI builds for the AppKit app and Raycast extension.
+- 92 fast core tests plus CI builds for the AppKit app and Raycast extension.
+
+### Optional Workspace++ cloud account
+
+- Sign in from Preferences to back up names, colours, monitor placement, and
+  workspace order to the app's own cloud service—no iCloud dependency.
+- Local settings keep working offline and automatically sync after reconnecting.
+- Sessions are stored in macOS Keychain. Each cloud row is protected by
+  owner-only row-level security.
+- On another Mac, Workspace++ matches workspaces by monitor and workspace order
+  when the machines' macOS Space UUIDs differ.
+- **Restore from Cloud** is an explicit option for a cloud-authoritative restore.
 
 ## Requirements
 
@@ -154,6 +168,7 @@ updates.
    - whether app windows remain visible and the name-background opacity;
    - global shortcuts;
    - the Move Focused Window picker shortcut;
+   - an optional Workspace++ cloud account and sync controls;
    - Launch at Login.
 4. In Raycast, search **Switch Space** and optionally assign it a global
    shortcut.
@@ -199,6 +214,7 @@ Workspace++.app
 ├── SpaceRenamerCore       Space parsing, identity, names, switching logic
 ├── AppKit menu-bar UI     Native combined mode + per-display controls
 ├── Mission Control UI     Per-Space overlay windows
+├── Cloud sync             Local-first account snapshot + Keychain session
 └── Local Raycast bridge   JSON index + atomic switch requests
 
 Raycast extension
@@ -211,8 +227,16 @@ real-machine findings remain in `docs/superpowers/`.
 
 ## Privacy and security
 
-- Workspace names and settings stay on the Mac.
-- The app has no analytics, account, cloud sync, or runtime network service.
+- Workspace names and settings stay on the Mac unless the user explicitly
+  creates a Workspace++ account and enables cloud sync.
+- Cloud snapshots contain workspace names, category definitions and assignments,
+  colours, monitor/order metadata,
+  modification times, and a random installation ID—not application windows,
+  browsing data, or a hardware serial number.
+- Account sessions are stored in macOS Keychain. The app embeds only the
+  backend's public publishable key; Auth plus row-level security confines every
+  cloud snapshot to its owner.
+- Workspace++ has no analytics or advertising trackers.
 - The Raycast bridge uses files under
   `~/Library/Application Support/Space Renamer/`.
 - Private SkyLight symbols are resolved at runtime to detect active Spaces and
