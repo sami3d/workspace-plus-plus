@@ -6,6 +6,8 @@ Versioning follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-08-14
+
 ### Fixed
 - Automatic cloud sync no longer cancels its own in-flight request or displays
   a misleading red “cancelled” status.

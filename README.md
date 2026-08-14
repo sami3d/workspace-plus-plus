@@ -118,15 +118,40 @@ second list of names.
 ## Requirements
 
 - macOS 13 or later.
-- Xcode 16 or later.
-- [`xcodegen`](https://github.com/yonaskolb/XcodeGen).
+- Xcode 16 or later and [`xcodegen`](https://github.com/yonaskolb/XcodeGen)
+  only when building from source.
 - [Raycast](https://www.raycast.com/) plus Node.js/npm for the optional Raycast
   command.
 
 ## Install
 
-The easiest current installation builds Workspace++ locally so macOS can keep a
-stable signing identity for Accessibility:
+### Prebuilt app (no Xcode required)
+
+Download `Workspace++-1.2.0-macOS.zip` from the
+[latest GitHub release](https://github.com/sami3d/workspace-plus-plus/releases/latest),
+expand it, and move `Workspace++.app` into `/Applications`.
+
+To preserve an existing installation while testing the update, quit
+Workspace++ and rename the old app to `Workspace++ Backup.app` before copying
+the new one. This does not delete workspace names, categories, preferences, or
+cloud data; those live outside the app bundle.
+
+The prebuilt app is self-signed rather than Apple-notarized. On first launch,
+right-click it and choose **Open**. If macOS still blocks it, remove quarantine
+from this app bundle only, then open it:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Workspace++.app"
+open "/Applications/Workspace++.app"
+```
+
+macOS may ask you to toggle Workspace++ off and back on under **System Settings
+→ Privacy & Security → Accessibility** after replacing the app.
+
+### Build from source
+
+Building locally gives the Mac its own stable signing identity for
+Accessibility:
 
 ```sh
 git clone https://github.com/sami3d/workspace-plus-plus.git
@@ -145,10 +170,10 @@ The installer:
 If Raycast or npm is missing, the app still installs and the script prints the
 single command needed to add Raycast later.
 
-There is not yet a notarized binary release. Notarization requires an Apple
-Developer Program identity; until that is available, a local source build is
-the most reliable way to preserve macOS Accessibility permission between
-updates.
+Notarization requires an Apple Developer Program identity. Until that is
+available, the downloadable build uses a stable self-signed identity and a
+local source build remains the most reliable option for preserving an existing
+Accessibility grant between updates.
 
 ## First run
 
