@@ -242,11 +242,11 @@ final class CloudSyncManager: ObservableObject {
     ) -> [CloudWorkspaceRecord] {
         let remoteByID = Dictionary(
             remote.snapshot.workspaces.map { ($0.storageID, $0) },
-            uniquingKeysWith: newest
+            uniquingKeysWith: { lhs, rhs in newest(lhs, rhs) }
         )
         let remoteBySlot = Dictionary(
             remote.snapshot.workspaces.map { ($0.slotKey, $0) },
-            uniquingKeysWith: newest
+            uniquingKeysWith: { lhs, rhs in newest(lhs, rhs) }
         )
         var matchedRemoteIDs = Set<String>()
         var result = local.map { localRecord -> CloudWorkspaceRecord in
@@ -267,7 +267,7 @@ final class CloudSyncManager: ObservableObject {
                     && !Set(result.map(\.slotKey)).contains($0.slotKey)
             })
         }
-        return result.sorted(by: workspaceOrder)
+        return result.sorted { lhs, rhs in workspaceOrder(lhs, rhs) }
     }
 
     private func promoteLegacyRecords(
@@ -293,8 +293,14 @@ final class CloudSyncManager: ObservableObject {
 
     private func apply(records: [CloudWorkspaceRecord]) {
         let local = currentRecords()
-        let byID = Dictionary(records.map { ($0.storageID, $0) }, uniquingKeysWith: newest)
-        let bySlot = Dictionary(records.map { ($0.slotKey, $0) }, uniquingKeysWith: newest)
+        let byID = Dictionary(
+            records.map { ($0.storageID, $0) },
+            uniquingKeysWith: { lhs, rhs in newest(lhs, rhs) }
+        )
+        let bySlot = Dictionary(
+            records.map { ($0.slotKey, $0) },
+            uniquingKeysWith: { lhs, rhs in newest(lhs, rhs) }
+        )
         isApplyingCloud = true
         defer { isApplyingCloud = false }
         for localRecord in local {
