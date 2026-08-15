@@ -10,6 +10,8 @@ final class CloudSyncManager: ObservableObject {
     @Published private(set) var workspaceHistory: [CloudWorkspaceHistoryItem] = []
     @Published private(set) var historyStatus = "Workspace history has not been loaded."
     @Published private(set) var workspaceHistoryEnabled: Bool
+    @Published private(set) var workspaceLibrary = WorkspaceLibrary()
+    @Published private(set) var libraryStatus = "Workspace Library has not been loaded."
 
     private let monitor: SpaceMonitor
     private let names: NameStore
@@ -26,7 +28,7 @@ final class CloudSyncManager: ObservableObject {
     private var bootstrapTask: Task<Void, Never>?
     private var pendingSyncTask: Task<Void, Never>?
     private var historyLoopTask: Task<Void, Never>?
-    private var historyCaptureTask: Task<Void, Never>?
+    private var historyCaptureTask: Task<Bool, Never>?
     private var workspaceHistoryRows: [CloudWorkspaceHistoryItem] = []
     private var hasBootstrapped = false
     private var isApplyingCloud = false
@@ -72,6 +74,7 @@ final class CloudSyncManager: ObservableObject {
     }
 
     var isConfigured: Bool { client != nil }
+    var currentDeviceID: UUID { deviceID }
 
     func start() {
         guard let client else { return }
@@ -150,23 +153,25 @@ final class CloudSyncManager: ObservableObject {
         await synchronize(email: email)
     }
 
-    func captureWorkspaceHistoryNow() async {
+    @discardableResult
+    func captureWorkspaceHistoryNow() async -> Bool {
         guard workspaceHistoryEnabled else {
             historyStatus = "Turn on Workspace History before saving app, window and tab details."
-            return
+            return false
         }
         guard state.email != nil else {
             historyStatus = "Sign in to save workspace sessions."
-            return
+            return false
         }
         historyCaptureTask?.cancel()
         let task = Task { [weak self] in
-            guard let self else { return }
-            await captureAndUploadWorkspaceHistory()
+            guard let self else { return false }
+            return await captureAndUploadWorkspaceHistory()
         }
         historyCaptureTask = task
-        await task.value
+        let succeeded = await task.value
         historyCaptureTask = nil
+        return succeeded
     }
 
     func refreshWorkspaceHistory() async {
@@ -177,8 +182,167 @@ final class CloudSyncManager: ObservableObject {
             historyStatus = workspaceHistory.isEmpty
                 ? "No workspace sessions have been saved yet."
                 : "\(workspaceHistory.count) saved workspace session\(workspaceHistory.count == 1 ? "" : "s")."
+            await refreshWorkspaceLibrary()
         } catch {
             historyStatus = error.localizedDescription
+        }
+    }
+
+    func refreshWorkspaceLibrary() async {
+        guard let client, state.email != nil else { return }
+        do {
+            workspaceLibrary = try await client.fetchWorkspaceLibrary()
+            let count = workspaceLibrary.workspaces.filter { $0.deletedAt == nil }.count
+            libraryStatus = count == 0
+                ? "No cloud workspaces yet. Save workspace history to create them."
+                : "\(count) cloud workspace\(count == 1 ? "" : "s") across \(workspaceLibrary.devices.count) Mac\(workspaceLibrary.devices.count == 1 ? "" : "s")."
+        } catch {
+            libraryStatus = error.localizedDescription
+        }
+    }
+
+    func parkInstance(_ instance: CloudWorkspaceInstance) async {
+        guard let client else { return }
+        guard let localWorkspaceKey = instance.localWorkspaceKey else {
+            libraryStatus = "This instance is already detached from a local Space."
+            return
+        }
+        guard await captureWorkspaceHistoryNow() else {
+            libraryStatus = "Parking stopped because the fresh cloud save failed."
+            return
+        }
+        guard workspaceLibrary.instances.first(where: { $0.id == instance.id })?.headRevisionID != nil else {
+            libraryStatus = "Parking stopped because no verified cloud revision exists yet."
+            return
+        }
+        do {
+            try await client.setInstanceState(id: instance.id, status: .parked, localWorkspaceKey: nil)
+            let closeResult = WorkspaceParker(monitor: monitor).closeWindows(in: localWorkspaceKey)
+            await refreshWorkspaceLibrary()
+            libraryStatus = "Workspace parked · closed \(closeResult.closedWindowCount) window\(closeResult.closedWindowCount == 1 ? "" : "s")"
+            if closeResult.skippedWindowCount > 0 {
+                libraryStatus += " · \(closeResult.skippedWindowCount) window\(closeResult.skippedWindowCount == 1 ? "" : "s") must be closed manually"
+            }
+        } catch {
+            libraryStatus = error.localizedDescription
+        }
+    }
+
+    func deleteLibraryWorkspace(_ workspace: CloudLibraryWorkspace) async {
+        guard let client else { return }
+        do {
+            try await client.deleteLibraryWorkspace(id: workspace.id)
+            await refreshWorkspaceLibrary()
+            libraryStatus = "Removed from the Workspace Library. Local windows were left untouched."
+        } catch {
+            libraryStatus = error.localizedDescription
+        }
+    }
+
+    func bindWorkspace(
+        _ workspace: CloudLibraryWorkspace,
+        to localWorkspaceKey: String,
+        asDuplicate: Bool
+    ) async {
+        guard let client,
+              let revision = workspaceLibrary.latestRevision(for: workspace) else { return }
+        let instanceID = asDuplicate
+            ? UUID()
+            : instanceID(for: localWorkspaceKey)
+        let target = monitor.spaces.first { $0.storageID == localWorkspaceKey }
+        var snapshot = revision.snapshot
+        if let target {
+            snapshot = WorkspaceSessionSnapshot(
+                workspaceKey: localWorkspaceKey,
+                workspaceName: workspace.name,
+                categoryName: workspace.categoryName,
+                colorHex: workspace.colorHex,
+                displayName: monitor.displays.first(where: { $0.id == target.displayID }).map {
+                    DisplayResolver.name(for: $0.id, ordinal: $0.ordinal)
+                } ?? revision.snapshot.displayName,
+                displayOrdinal: monitor.displays.first(where: { $0.id == target.displayID })?.ordinal
+                    ?? revision.snapshot.displayOrdinal,
+                spaceOrdinal: target.ordinal,
+                applications: revision.snapshot.applications
+            )
+        }
+        do {
+            let hash = sessionCapture.contentHash(for: snapshot)
+            let newRevisionID = stableRevisionID(instanceID: instanceID, hash: hash)
+            try await client.saveLibraryRevision(
+                workspaceID: workspace.id,
+                instanceID: instanceID,
+                revisionID: newRevisionID,
+                parentRevisionID: revision.id,
+                contentHash: hash,
+                snapshot: snapshot,
+                device: currentDevice(),
+                status: .loaded
+            )
+            rememberWorkspaceID(workspace.id, for: localWorkspaceKey)
+            rememberInstanceID(instanceID, for: localWorkspaceKey)
+            names.setName(localWorkspaceKey, workspace.name)
+            await refreshWorkspaceLibrary()
+        } catch {
+            libraryStatus = error.localizedDescription
+        }
+    }
+
+    func requestTransfer(
+        workspace: CloudLibraryWorkspace,
+        destinationDeviceID: UUID?,
+        mode: CloudWorkspaceTransferMode
+    ) async {
+        guard let client,
+              let revision = workspaceLibrary.latestRevision(for: workspace) else { return }
+        let source = workspaceLibrary.instances(for: workspace.id)
+            .first(where: { $0.deviceID == deviceID && $0.status != .parked })
+        do {
+            try await client.createTransfer(
+                workspaceID: workspace.id,
+                revisionID: revision.id,
+                sourceInstanceID: source?.id,
+                sourceDeviceID: deviceID,
+                destinationDeviceID: destinationDeviceID,
+                mode: mode
+            )
+            await refreshWorkspaceLibrary()
+            libraryStatus = mode == .move
+                ? "Move requested. The source remains intact until the destination accepts and verifies it."
+                : "Copy requested. The destination Mac can now launch its own instance."
+        } catch {
+            libraryStatus = error.localizedDescription
+        }
+    }
+
+    /// Called only after restore succeeds on the destination. A move then
+    /// parks the source instance; a copy leaves both instances loaded.
+    func completePendingTransfer(
+        for workspace: CloudLibraryWorkspace,
+        localWorkspaceKey: String
+    ) async {
+        guard let client else { return }
+        let transfer = workspaceLibrary.transfers.first {
+            $0.workspaceID == workspace.id
+                && $0.status == .pending
+                && ($0.destinationDeviceID == nil || $0.destinationDeviceID == deviceID)
+        }
+        guard let transfer else { return }
+        let destinationInstanceID = instanceID(for: localWorkspaceKey)
+        do {
+            try await client.completeTransfer(
+                id: transfer.id,
+                destinationInstanceID: destinationInstanceID
+            )
+            if transfer.mode == .move, let source = transfer.sourceInstanceID {
+                try await client.setInstanceState(id: source, status: .parked, localWorkspaceKey: nil)
+            }
+            await refreshWorkspaceLibrary()
+            libraryStatus = transfer.mode == .move
+                ? "Move verified. The destination is loaded and the source is now parked."
+                : "Copy verified. Both local instances remain available."
+        } catch {
+            libraryStatus = "Restored locally, but cloud transfer finalization failed: \(error.localizedDescription)"
         }
     }
 
@@ -282,15 +446,15 @@ final class CloudSyncManager: ObservableObject {
             do { try await Task.sleep(for: .seconds(20)) }
             catch { return }
             while let self, !Task.isCancelled {
-                await self.captureWorkspaceHistoryNow()
+                _ = await self.captureWorkspaceHistoryNow()
                 do { try await Task.sleep(for: .seconds(300)) }
                 catch { return }
             }
         }
     }
 
-    private func captureAndUploadWorkspaceHistory() async {
-        guard let client else { return }
+    private func captureAndUploadWorkspaceHistory() async -> Bool {
+        guard let client else { return false }
         historyStatus = "Capturing applications, windows and browser tabs…"
         let capture = await sessionCapture.captureAll()
         let existing = Dictionary(
@@ -309,10 +473,40 @@ final class CloudSyncManager: ObservableObject {
                 snapshot
             )
         }
+        // Library v2 has its own immutable revision graph. Seed it from an
+        // existing v1 history even when the legacy latest-snapshot row has not
+        // changed, then append only when this instance's content hash changes.
+        let libraryChanges = capture.snapshots.compactMap { snapshot
+            -> (hash: String, snapshot: WorkspaceSessionSnapshot)? in
+            let hash = sessionCapture.contentHash(for: snapshot)
+            let instanceID = instanceID(for: snapshot.workspaceKey)
+            let existingHead = workspaceLibrary.instances.first { $0.id == instanceID }?.headRevisionID
+            let existingHash = existingHead.flatMap { head in
+                workspaceLibrary.revisions.first { $0.id == head }?.contentHash
+            }
+            guard existingHash != hash else { return nil }
+            return (hash, snapshot)
+        }
         do {
             let device = currentDevice()
             try await client.registerDevice(device)
             try await client.saveWorkspaceSessions(changed, device: device)
+            for item in libraryChanges {
+                let workspaceID = workspaceID(for: item.snapshot.workspaceKey)
+                let instanceID = instanceID(for: item.snapshot.workspaceKey)
+                let revisionID = stableRevisionID(instanceID: instanceID, hash: item.hash)
+                let parent = workspaceLibrary.instances.first(where: { $0.id == instanceID })?.headRevisionID
+                try await client.saveLibraryRevision(
+                    workspaceID: workspaceID,
+                    instanceID: instanceID,
+                    revisionID: revisionID,
+                    parentRevisionID: parent,
+                    contentHash: item.hash,
+                    snapshot: item.snapshot,
+                    device: device,
+                    status: .loaded
+                )
+            }
             await refreshWorkspaceHistory()
             if changed.isEmpty {
                 historyStatus = "Everything is current · checked \(Date().formatted(date: .omitted, time: .shortened))."
@@ -320,8 +514,10 @@ final class CloudSyncManager: ObservableObject {
             if !capture.warnings.isEmpty {
                 historyStatus += " " + capture.warnings.joined(separator: " ")
             }
+            return true
         } catch {
             historyStatus = error.localizedDescription
+            return false
         }
     }
 
@@ -355,6 +551,61 @@ final class CloudSyncManager: ObservableObject {
         let digest = SHA256.hash(
             data: Data("\(deviceID.uuidString.lowercased()):\(workspaceKey)".utf8)
         )
+        var bytes = Array(digest.prefix(16))
+        bytes[6] = (bytes[6] & 0x0f) | 0x50
+        bytes[8] = (bytes[8] & 0x3f) | 0x80
+        return UUID(uuid: (
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[8], bytes[9], bytes[10], bytes[11],
+            bytes[12], bytes[13], bytes[14], bytes[15]
+        ))
+    }
+
+    private func workspaceID(for workspaceKey: String) -> UUID {
+        let defaultsKey = "SpaceRenamer.cloudWorkspaceIDs.v2"
+        var stored = defaults.dictionary(forKey: defaultsKey) as? [String: String] ?? [:]
+        if let raw = stored[workspaceKey], let id = UUID(uuidString: raw) { return id }
+        let id = UUID()
+        stored[workspaceKey] = id.uuidString
+        defaults.set(stored, forKey: defaultsKey)
+        return id
+    }
+
+    private func rememberWorkspaceID(_ id: UUID, for workspaceKey: String) {
+        let defaultsKey = "SpaceRenamer.cloudWorkspaceIDs.v2"
+        var stored = defaults.dictionary(forKey: defaultsKey) as? [String: String] ?? [:]
+        stored[workspaceKey] = id.uuidString
+        defaults.set(stored, forKey: defaultsKey)
+    }
+
+    private func stableInstanceID(workspaceKey: String) -> UUID {
+        stableUUID(seed: "instance:\(deviceID.uuidString.lowercased()):\(workspaceKey)")
+    }
+
+    private func instanceID(for workspaceKey: String) -> UUID {
+        let defaultsKey = "SpaceRenamer.cloudInstanceIDs.v2"
+        var stored = defaults.dictionary(forKey: defaultsKey) as? [String: String] ?? [:]
+        if let raw = stored[workspaceKey], let id = UUID(uuidString: raw) { return id }
+        let id = stableInstanceID(workspaceKey: workspaceKey)
+        stored[workspaceKey] = id.uuidString
+        defaults.set(stored, forKey: defaultsKey)
+        return id
+    }
+
+    private func rememberInstanceID(_ id: UUID, for workspaceKey: String) {
+        let defaultsKey = "SpaceRenamer.cloudInstanceIDs.v2"
+        var stored = defaults.dictionary(forKey: defaultsKey) as? [String: String] ?? [:]
+        stored[workspaceKey] = id.uuidString
+        defaults.set(stored, forKey: defaultsKey)
+    }
+
+    private func stableRevisionID(instanceID: UUID, hash: String) -> UUID {
+        stableUUID(seed: "revision:\(instanceID.uuidString.lowercased()):\(hash)")
+    }
+
+    private func stableUUID(seed: String) -> UUID {
+        let digest = SHA256.hash(data: Data(seed.utf8))
         var bytes = Array(digest.prefix(16))
         bytes[6] = (bytes[6] & 0x0f) | 0x50
         bytes[8] = (bytes[8] & 0x3f) | 0x80

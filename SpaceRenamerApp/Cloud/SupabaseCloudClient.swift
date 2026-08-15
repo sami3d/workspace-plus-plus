@@ -106,6 +106,115 @@ actor SupabaseCloudClient {
         let deletedAt: Date
     }
 
+    private struct LibraryWorkspaceWrite: Encodable {
+        let id: UUID
+        let userID: UUID
+        let name: String
+        let categoryName: String?
+        let colorHex: String?
+        let currentRevisionID: UUID
+        let isArchived: Bool
+        let updatedAt: Date
+
+        private enum CodingKeys: String, CodingKey {
+            case id, name, categoryName, colorHex, isArchived, updatedAt
+            case userID = "userId"
+            case currentRevisionID = "currentRevisionId"
+        }
+    }
+
+    private struct LibraryInstanceWrite: Encodable {
+        let id: UUID
+        let userID: UUID
+        let workspaceID: UUID
+        let deviceID: UUID
+        let localWorkspaceKey: String?
+        let displayName: String?
+        let displayOrdinal: Int?
+        let spaceOrdinal: Int?
+        let status: CloudWorkspaceInstanceStatus
+        let headRevisionID: UUID
+        let lastSeenAt: Date
+        let updatedAt: Date
+        let deletedAt: Date?
+
+        private enum CodingKeys: String, CodingKey {
+            case id, localWorkspaceKey, displayName, displayOrdinal, spaceOrdinal
+            case status, lastSeenAt, updatedAt, deletedAt
+            case userID = "userId"
+            case workspaceID = "workspaceId"
+            case deviceID = "deviceId"
+            case headRevisionID = "headRevisionId"
+        }
+    }
+
+    private struct LibraryRevisionWrite: Encodable {
+        let id: UUID
+        let userID: UUID
+        let workspaceID: UUID
+        let instanceID: UUID
+        let parentRevisionID: UUID?
+        let sourceDeviceID: UUID
+        let contentHash: String
+        let snapshot: WorkspaceSessionSnapshot
+        let createdAt: Date
+
+        private enum CodingKeys: String, CodingKey {
+            case id, contentHash, snapshot, createdAt
+            case userID = "userId"
+            case workspaceID = "workspaceId"
+            case instanceID = "instanceId"
+            case parentRevisionID = "parentRevisionId"
+            case sourceDeviceID = "sourceDeviceId"
+        }
+    }
+
+    private struct InstanceStatePatch: Encodable {
+        let status: CloudWorkspaceInstanceStatus
+        let localWorkspaceKey: String?
+        let updatedAt: Date
+    }
+
+    private struct TransferWrite: Encodable {
+        let id: UUID
+        let userID: UUID
+        let workspaceID: UUID
+        let revisionID: UUID
+        let sourceInstanceID: UUID?
+        let sourceDeviceID: UUID
+        let destinationDeviceID: UUID?
+        let mode: CloudWorkspaceTransferMode
+        let status: CloudWorkspaceTransferStatus
+        let createdAt: Date
+
+        private enum CodingKeys: String, CodingKey {
+            case id, mode, status, createdAt
+            case userID = "userId"
+            case workspaceID = "workspaceId"
+            case revisionID = "revisionId"
+            case sourceInstanceID = "sourceInstanceId"
+            case sourceDeviceID = "sourceDeviceId"
+            case destinationDeviceID = "destinationDeviceId"
+        }
+    }
+
+    private struct TransferCompletionPatch: Encodable {
+        let status: CloudWorkspaceTransferStatus
+        let destinationInstanceID: UUID
+        let acceptedAt: Date
+        let completedAt: Date
+
+        private enum CodingKeys: String, CodingKey {
+            case status, acceptedAt, completedAt
+            case destinationInstanceID = "destinationInstanceId"
+        }
+    }
+
+    private struct LibraryDeletionPatch: Encodable {
+        let deletedAt: Date
+        let updatedAt: Date
+    }
+
     private let configuration: CloudConfiguration
     private var session: CloudSession?
 
@@ -294,6 +403,238 @@ actor SupabaseCloudClient {
         request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
         request.httpBody = try JSONEncoder.cloud.encode(SessionDeletion(deletedAt: Date()))
         _ = try await perform(request)
+    }
+
+    func saveLibraryRevision(
+        workspaceID: UUID,
+        instanceID: UUID,
+        revisionID: UUID,
+        parentRevisionID: UUID?,
+        contentHash: String,
+        snapshot: WorkspaceSessionSnapshot,
+        device: CloudWorkspaceDevice,
+        status: CloudWorkspaceInstanceStatus
+    ) async throws {
+        let auth = try await validSession()
+        let now = Date()
+        try await registerDevice(device)
+        try await upsert(
+            table: "cloud_workspaces",
+            conflict: "id",
+            value: LibraryWorkspaceWrite(
+                id: workspaceID,
+                userID: auth.userID,
+                name: snapshot.workspaceName,
+                categoryName: snapshot.categoryName,
+                colorHex: snapshot.colorHex,
+                currentRevisionID: revisionID,
+                isArchived: status == .parked,
+                updatedAt: now
+            ),
+            accessToken: auth.accessToken
+        )
+        try await upsert(
+            table: "workspace_instances",
+            conflict: "id",
+            value: LibraryInstanceWrite(
+                id: instanceID,
+                userID: auth.userID,
+                workspaceID: workspaceID,
+                deviceID: device.deviceID,
+                localWorkspaceKey: status == .parked ? nil : snapshot.workspaceKey,
+                displayName: snapshot.displayName,
+                displayOrdinal: snapshot.displayOrdinal,
+                spaceOrdinal: snapshot.spaceOrdinal,
+                status: status,
+                headRevisionID: revisionID,
+                lastSeenAt: now,
+                updatedAt: now,
+                deletedAt: nil
+            ),
+            accessToken: auth.accessToken
+        )
+        try await upsert(
+            table: "workspace_revisions",
+            conflict: "id",
+            value: LibraryRevisionWrite(
+                id: revisionID,
+                userID: auth.userID,
+                workspaceID: workspaceID,
+                instanceID: instanceID,
+                parentRevisionID: parentRevisionID,
+                sourceDeviceID: device.deviceID,
+                contentHash: contentHash,
+                snapshot: snapshot,
+                createdAt: snapshot.capturedAt
+            ),
+            accessToken: auth.accessToken
+        )
+    }
+
+    func fetchWorkspaceLibrary() async throws -> WorkspaceLibrary {
+        let auth = try await validSession()
+        async let workspaces: [CloudLibraryWorkspace] = fetchRows(
+            table: "cloud_workspaces",
+            select: "id,name,category_name,color_hex,current_revision_id,is_archived,created_at,updated_at,deleted_at",
+            order: "updated_at.desc",
+            userID: auth.userID,
+            accessToken: auth.accessToken
+        )
+        async let instances: [CloudWorkspaceInstance] = fetchRows(
+            table: "workspace_instances",
+            select: "id,workspace_id,device_id,local_workspace_key,display_name,display_ordinal,space_ordinal,status,head_revision_id,last_seen_at,created_at,updated_at,deleted_at",
+            order: "updated_at.desc",
+            userID: auth.userID,
+            accessToken: auth.accessToken
+        )
+        async let revisions: [CloudWorkspaceRevision] = fetchRows(
+            table: "workspace_revisions",
+            select: "id,workspace_id,instance_id,parent_revision_id,source_device_id,content_hash,snapshot,created_at",
+            order: "created_at.desc",
+            userID: auth.userID,
+            accessToken: auth.accessToken
+        )
+        async let transfers: [CloudWorkspaceTransfer] = fetchRows(
+            table: "workspace_transfers",
+            select: "id,workspace_id,revision_id,source_instance_id,source_device_id,destination_device_id,destination_instance_id,mode,status,created_at,accepted_at,completed_at,cancelled_at",
+            order: "created_at.desc",
+            userID: auth.userID,
+            accessToken: auth.accessToken
+        )
+        async let devices: [CloudWorkspaceDevice] = fetchRows(
+            table: "workspace_devices",
+            select: "device_id,name,model,operating_system,app_version,last_seen_at",
+            order: "last_seen_at.desc",
+            userID: auth.userID,
+            accessToken: auth.accessToken
+        )
+        return try await WorkspaceLibrary(
+            workspaces: workspaces,
+            instances: instances,
+            revisions: revisions,
+            transfers: transfers,
+            devices: devices
+        )
+    }
+
+    func setInstanceState(
+        id: UUID,
+        status: CloudWorkspaceInstanceStatus,
+        localWorkspaceKey: String?
+    ) async throws {
+        let auth = try await validSession()
+        var request = makeRequest(
+            path: "rest/v1/workspace_instances?id=eq.\(id.uuidString.lowercased())&user_id=eq.\(auth.userID.uuidString.lowercased())",
+            method: "PATCH"
+        )
+        addAPIHeaders(to: &request, accessToken: auth.accessToken)
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        request.httpBody = try JSONEncoder.cloud.encode(InstanceStatePatch(
+            status: status,
+            localWorkspaceKey: localWorkspaceKey,
+            updatedAt: Date()
+        ))
+        _ = try await perform(request)
+    }
+
+    func createTransfer(
+        workspaceID: UUID,
+        revisionID: UUID,
+        sourceInstanceID: UUID?,
+        sourceDeviceID: UUID,
+        destinationDeviceID: UUID?,
+        mode: CloudWorkspaceTransferMode
+    ) async throws {
+        let auth = try await validSession()
+        try await upsert(
+            table: "workspace_transfers",
+            conflict: "id",
+            value: TransferWrite(
+                id: UUID(),
+                userID: auth.userID,
+                workspaceID: workspaceID,
+                revisionID: revisionID,
+                sourceInstanceID: sourceInstanceID,
+                sourceDeviceID: sourceDeviceID,
+                destinationDeviceID: destinationDeviceID,
+                mode: mode,
+                status: .pending,
+                createdAt: Date()
+            ),
+            accessToken: auth.accessToken
+        )
+    }
+
+    func completeTransfer(id: UUID, destinationInstanceID: UUID) async throws {
+        let auth = try await validSession()
+        let now = Date()
+        var request = makeRequest(
+            path: "rest/v1/workspace_transfers?id=eq.\(id.uuidString.lowercased())&user_id=eq.\(auth.userID.uuidString.lowercased())",
+            method: "PATCH"
+        )
+        addAPIHeaders(to: &request, accessToken: auth.accessToken)
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        request.httpBody = try JSONEncoder.cloud.encode(TransferCompletionPatch(
+            status: .completed,
+            destinationInstanceID: destinationInstanceID,
+            acceptedAt: now,
+            completedAt: now
+        ))
+        _ = try await perform(request)
+    }
+
+    func deleteLibraryWorkspace(id: UUID) async throws {
+        let auth = try await validSession()
+        let now = Date()
+        var request = makeRequest(
+            path: "rest/v1/cloud_workspaces?id=eq.\(id.uuidString.lowercased())&user_id=eq.\(auth.userID.uuidString.lowercased())",
+            method: "PATCH"
+        )
+        addAPIHeaders(to: &request, accessToken: auth.accessToken)
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        request.httpBody = try JSONEncoder.cloud.encode(
+            LibraryDeletionPatch(deletedAt: now, updatedAt: now)
+        )
+        _ = try await perform(request)
+    }
+
+    private func upsert<T: Encodable>(
+        table: String,
+        conflict: String,
+        value: T,
+        accessToken: String
+    ) async throws {
+        var request = makeRequest(
+            path: "rest/v1/\(table)?on_conflict=\(conflict)",
+            method: "POST"
+        )
+        addAPIHeaders(to: &request, accessToken: accessToken)
+        request.setValue("resolution=merge-duplicates,return=minimal", forHTTPHeaderField: "Prefer")
+        request.httpBody = try JSONEncoder.cloud.encode(value)
+        _ = try await perform(request)
+    }
+
+    private func fetchRows<T: Decodable>(
+        table: String,
+        select: String,
+        order: String,
+        userID: UUID,
+        accessToken: String
+    ) async throws -> [T] {
+        var components = URLComponents(
+            url: configuration.projectURL.appendingPathComponent("rest/v1/\(table)"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [
+            URLQueryItem(name: "select", value: select),
+            URLQueryItem(name: "user_id", value: "eq.\(userID.uuidString.lowercased())"),
+            URLQueryItem(name: "order", value: order),
+        ]
+        guard let url = components?.url else { throw ClientError.invalidResponse }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        addAPIHeaders(to: &request, accessToken: accessToken)
+        return try JSONDecoder.cloud.decode([T].self, from: await perform(request))
     }
 
     private func authRequest<T: Decodable>(

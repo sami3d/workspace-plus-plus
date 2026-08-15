@@ -31,8 +31,34 @@ struct WorkspaceBrowserTab: Codable, Equatable, Sendable, Identifiable {
     let url: String
     let isActive: Bool
     let isPinned: Bool?
+    let groupKey: String?
     let groupTitle: String?
     let groupColor: String?
+    let groupCollapsed: Bool?
+
+    init(
+        id: String,
+        index: Int,
+        title: String,
+        url: String,
+        isActive: Bool,
+        isPinned: Bool?,
+        groupKey: String? = nil,
+        groupTitle: String?,
+        groupColor: String?,
+        groupCollapsed: Bool? = nil
+    ) {
+        self.id = id
+        self.index = index
+        self.title = title
+        self.url = url
+        self.isActive = isActive
+        self.isPinned = isPinned
+        self.groupKey = groupKey
+        self.groupTitle = groupTitle
+        self.groupColor = groupColor
+        self.groupCollapsed = groupCollapsed
+    }
 }
 
 struct WorkspaceCapturedWindow: Codable, Equatable, Sendable, Identifiable {

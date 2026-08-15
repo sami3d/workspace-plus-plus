@@ -11,6 +11,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let switcher: SwitcherEngine
     private let openMoveWindowPicker: () -> Void
     private let createWorkspace: () -> Void
+    private let openWorkspaceLibrary: () -> Void
     private let openPreferences: () -> Void
     private let applicationIndex = SpaceApplicationIndex()
     private var cancellables: Set<AnyCancellable> = []
@@ -24,6 +25,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
          switcher: SwitcherEngine,
          openMoveWindowPicker: @escaping () -> Void,
          createWorkspace: @escaping () -> Void,
+         openWorkspaceLibrary: @escaping () -> Void,
          openPreferences: @escaping () -> Void) {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.monitor = monitor
@@ -31,6 +33,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         self.switcher = switcher
         self.openMoveWindowPicker = openMoveWindowPicker
         self.createWorkspace = createWorkspace
+        self.openWorkspaceLibrary = openWorkspaceLibrary
         self.openPreferences = openPreferences
         super.init()
         menu.delegate = self
@@ -209,6 +212,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
+        let library = NSMenuItem(
+            title: "Workspace Library…",
+            action: #selector(libraryClicked),
+            keyEquivalent: ""
+        )
+        library.target = self
+        menu.addItem(library)
         let createWorkspace = NSMenuItem(
             title: "Create Workspace (Experimental)…",
             action: #selector(createWorkspaceClicked),
@@ -792,6 +802,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func prefsClicked() { openPreferences() }
+    @objc private func libraryClicked() { openWorkspaceLibrary() }
 
     @objc private func moveWindowClicked() { openMoveWindowPicker() }
 

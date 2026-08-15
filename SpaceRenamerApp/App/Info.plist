@@ -17,20 +17,20 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.2.0</string>
+	<string>1.3.0</string>
 	<key>CFBundleVersion</key>
-	<string>3</string>
+	<string>4</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Workspace++ reads Chrome window and tab URLs only to save and restore workspace sessions you control.</string>
 	<key>NSSupportsAutomaticTermination</key>
 	<false/>
 	<key>NSSupportsSuddenTermination</key>
 	<false/>
-	<key>NSAppleEventsUsageDescription</key>
-	<string>Workspace++ reads Chrome window and tab URLs only to save and restore workspace sessions you control.</string>
-	<key>WorkspaceCloudURL</key>
-	<string>https://djzumrvobmvfspnmxnqr.supabase.co</string>
 	<key>WorkspaceCloudPublishableKey</key>
 	<string>sb_publishable_pUG_lQD49bjeZWl7WBWEiQ_LJf9tXFs</string>
+	<key>WorkspaceCloudURL</key>
+	<string>https://djzumrvobmvfspnmxnqr.supabase.co</string>
 </dict>
 </plist>

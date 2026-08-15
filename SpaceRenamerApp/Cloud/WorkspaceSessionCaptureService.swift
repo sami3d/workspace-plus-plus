@@ -176,9 +176,11 @@ final class WorkspaceSessionCaptureService {
                         title: tab.title,
                         url: tab.url,
                         isActive: tabIndex + 1 == chromeWindow.activeTabIndex,
-                        isPinned: nil,
-                        groupTitle: nil,
-                        groupColor: nil
+                        isPinned: tab.pinned,
+                        groupKey: tab.groupKey,
+                        groupTitle: tab.groupTitle,
+                        groupColor: tab.groupColor,
+                        groupCollapsed: tab.groupCollapsed
                     )
                 }
                 return WorkspaceCapturedWindow(

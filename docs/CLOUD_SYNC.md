@@ -1,5 +1,38 @@
 # Workspace++ Cloud Sync
 
+## Workspace Library (v1.3)
+
+Workspace++ treats a workspace as a durable cloud project, not as a macOS Space.
+Loading one creates a local instance bound to a Space on a specific Mac. Each
+capture creates an immutable revision only when its contents change.
+
+The Workspace Library is opened from the menu-bar menu. It supports:
+
+- explicit launch into a user-selected local Space;
+- duplicate local instances;
+- parking after a verified fresh capture, closing only the windows assigned to
+  that Space while leaving applications running;
+- copy requests to a named Mac or any signed-in Mac;
+- verified moves, where the source is parked only after destination restore;
+- expandable app, window, Chrome tab, and Chrome tab-group details.
+
+The v1.2 `workspace_sessions` table remains intact for backward compatibility.
+The v1.3 graph is stored in `cloud_workspaces`, `workspace_instances`,
+`workspace_revisions`, and `workspace_transfers`.
+
+## Chrome companion
+
+The extension source and native messaging executable ship inside Workspace++.
+The app installs the native-host manifest and copies the extension to a stable
+Application Support path. Chrome still requires one explicit user approval.
+
+Development builds use **Workspace Library → Enable Chrome Integration** and
+Chrome's **Load unpacked** control. Public distribution must use the Chrome Web
+Store on macOS; Chrome does not permit a normal Mac app to silently install a
+self-hosted extension. Once approved, the extension sends exact normal-window,
+tab, pinned-tab, and tab-group metadata to the bundled native host. Incognito
+windows remain excluded.
+
 Workspace++ cloud sync is local-first and opt-in. Without an account or an
 internet connection, the existing `UserDefaults` store remains authoritative.
 

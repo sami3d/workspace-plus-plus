@@ -1,5 +1,10 @@
 # Workspace++
 
+Workspace++ now includes a cloud Workspace Library for parking, launching,
+duplicating, copying, and safely moving workspace sessions between Macs. The
+optional Chrome companion is bundled with the app and preserves pinned tabs and
+tab-group metadata after Chrome's one-time approval.
+
 <p align="center">
   <img src="RaycastExtension/assets/command-icon.png" width="128" alt="Workspace++ icon">
 </p>

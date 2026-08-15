@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.3.0 — Workspace Library and Chrome companion
+
+- Adds a dedicated Workspace Library with All, Running, Parked, Pending Moves,
+  and By Mac views.
+- Models cloud workspaces separately from per-Mac instances and stores immutable
+  revisions, so two laptops can work from the same workspace without silently
+  overwriting each other.
+- Adds explicit Launch, Duplicate, Park, Copy to Mac, and verified Move to Mac
+  workflows. A move never parks the source until the destination restore succeeds.
+- Parking requires a fresh successful cloud capture, then closes only windows
+  that macOS confirms belong to that Space; apps and save prompts remain intact.
+- Bundles the Workspace++ Chrome Companion and its signed native messaging host
+  inside the app. The companion captures pinned tabs and Chrome tab-group names,
+  colours, collapsed state, ordering, and restores them when available.
+- Keeps AppleScript Chrome capture as a zero-extension fallback.
+- Adds secure Supabase tables for workspaces, instances, revisions, and transfers,
+  all protected by forced row-level security and explicit authenticated grants.
+
 All notable changes to this project are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versioning follows [Semantic Versioning](https://semver.org/).

@@ -34,8 +34,18 @@ final class WorkspaceSessionRestorer {
     /// first means newly-created windows naturally belong to the destination
     /// without private window-placement APIs.
     func restore(_ item: CloudWorkspaceHistoryItem) async throws {
+        try await restore(snapshot: item.snapshot)
+    }
+
+    func restore(
+        snapshot: WorkspaceSessionSnapshot,
+        targetStorageID: String? = nil
+    ) async throws {
         monitor.reload()
-        guard let target = targetSpace(for: item.snapshot) else {
+        let explicitTarget = targetStorageID.flatMap { storageID in
+            monitor.spaces.first { $0.storageID == storageID }
+        }
+        guard let target = explicitTarget ?? targetSpace(for: snapshot) else {
             throw RestoreError.noTargetWorkspace
         }
         do {
@@ -46,7 +56,7 @@ final class WorkspaceSessionRestorer {
         monitor.refreshAfterSpaceChange(targetID: target.id)
         try? await Task.sleep(for: .seconds(1))
 
-        for application in item.snapshot.applications {
+        for application in snapshot.applications {
             if application.bundleIdentifier == "com.google.Chrome" {
                 try await chrome.restore(windows: application.windows)
                 continue

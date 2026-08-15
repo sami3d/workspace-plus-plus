@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Workspace++ Chrome Companion",
+  "version": "1.0.0",
+  "description": "Saves and restores Chrome windows, tabs, pinned tabs, and tab groups with Workspace++.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu5TUBsfVa5Hf4t01ofno5kcBvVPP6qEtHepddc3LoEOfTyGZ2Xvmuwqw4x0BcyXUVivDI78fBVFp//AbpVBdQz18Fa0gGsTIk1aopxTmcvqsXHxF7pRS6Lq8LOiiIH/gJtehwS8I9MIlVtSF824kkDRW61XyTrEcpXrYAceqqV2EVL5JdY275krCY9tnuxnvc3HeGIk/m672q6QkwTNHQfh6h+ZKACYrsVxO3hLn52UboA9aF7R06HvAj+5q9zf+mVJh3ho7T0Kr7H6IKglyu8iqajnUP92ToL4A+G/9wSc13PATFpp0Wfe4WN+VXU4/nNahEHBpLX150YjnO7+rVQIDAQAB",
+  "permissions": ["tabs", "tabGroups", "nativeMessaging", "alarms"],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "action": {
+    "default_title": "Save Chrome state to Workspace++"
+  }
+}

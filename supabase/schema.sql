@@ -139,3 +139,170 @@ grant all on table public.workspace_sessions to service_role;
 -- workspace clears the tombstone through the normal upsert.
 alter table public.workspace_sessions
 add column if not exists deleted_at timestamptz;
+
+-- Workspace Library v2. A cloud workspace is the durable project. Instances
+-- describe where it is currently loaded; immutable revisions preserve what
+-- was captured on each Mac without last-writer-wins data loss.
+create table if not exists public.cloud_workspaces (
+    id uuid primary key,
+    user_id uuid not null references auth.users(id) on delete cascade,
+    name text not null,
+    category_name text,
+    color_hex text,
+    current_revision_id uuid,
+    is_archived boolean not null default false,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    deleted_at timestamptz,
+    constraint cloud_workspaces_name_not_blank check (length(btrim(name)) > 0),
+    constraint cloud_workspaces_color_hex check (
+        color_hex is null or color_hex ~ '^[0-9A-Fa-f]{6}$'
+    )
+);
+
+create index if not exists cloud_workspaces_owner_updated_idx
+on public.cloud_workspaces (user_id, updated_at desc);
+
+create table if not exists public.workspace_instances (
+    id uuid primary key,
+    user_id uuid not null references auth.users(id) on delete cascade,
+    workspace_id uuid not null references public.cloud_workspaces(id) on delete cascade,
+    device_id uuid not null,
+    local_workspace_key text,
+    display_name text,
+    display_ordinal integer,
+    space_ordinal integer,
+    status text not null default 'loaded',
+    head_revision_id uuid,
+    last_seen_at timestamptz not null default now(),
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now(),
+    deleted_at timestamptz,
+    constraint workspace_instances_owner_device_fk
+        foreign key (user_id, device_id)
+        references public.workspace_devices(user_id, device_id)
+        on delete cascade,
+    constraint workspace_instances_valid_status check (
+        status in ('loaded', 'focused', 'parked', 'pending_move', 'stale')
+    )
+);
+
+create unique index if not exists workspace_instances_local_binding_unique
+on public.workspace_instances (user_id, device_id, local_workspace_key)
+where local_workspace_key is not null and deleted_at is null;
+create index if not exists workspace_instances_workspace_idx
+on public.workspace_instances (user_id, workspace_id, updated_at desc);
+create index if not exists workspace_instances_device_idx
+on public.workspace_instances (user_id, device_id, status);
+
+create table if not exists public.workspace_revisions (
+    id uuid primary key,
+    user_id uuid not null references auth.users(id) on delete cascade,
+    workspace_id uuid not null references public.cloud_workspaces(id) on delete cascade,
+    instance_id uuid references public.workspace_instances(id) on delete set null,
+    parent_revision_id uuid references public.workspace_revisions(id) on delete set null,
+    source_device_id uuid not null,
+    content_hash text not null,
+    snapshot jsonb not null,
+    created_at timestamptz not null default now(),
+    constraint workspace_revisions_owner_device_fk
+        foreign key (user_id, source_device_id)
+        references public.workspace_devices(user_id, device_id)
+        on delete cascade,
+    constraint workspace_revisions_snapshot_is_object
+        check (jsonb_typeof(snapshot) = 'object')
+);
+
+create unique index if not exists workspace_revisions_instance_hash_unique
+on public.workspace_revisions (user_id, instance_id, content_hash)
+where instance_id is not null;
+create index if not exists workspace_revisions_workspace_created_idx
+on public.workspace_revisions (user_id, workspace_id, created_at desc);
+
+create table if not exists public.workspace_transfers (
+    id uuid primary key,
+    user_id uuid not null references auth.users(id) on delete cascade,
+    workspace_id uuid not null references public.cloud_workspaces(id) on delete cascade,
+    revision_id uuid not null references public.workspace_revisions(id) on delete cascade,
+    source_instance_id uuid references public.workspace_instances(id) on delete set null,
+    source_device_id uuid not null,
+    destination_device_id uuid,
+    destination_instance_id uuid references public.workspace_instances(id) on delete set null,
+    mode text not null,
+    status text not null default 'pending',
+    created_at timestamptz not null default now(),
+    accepted_at timestamptz,
+    completed_at timestamptz,
+    cancelled_at timestamptz,
+    constraint workspace_transfers_mode_check check (mode in ('copy', 'move')),
+    constraint workspace_transfers_status_check check (
+        status in ('pending', 'accepted', 'completed', 'cancelled', 'failed')
+    ),
+    constraint workspace_transfers_not_same_device check (
+        destination_device_id is null or destination_device_id <> source_device_id
+    )
+);
+
+create index if not exists workspace_transfers_destination_idx
+on public.workspace_transfers (user_id, destination_device_id, status, created_at desc);
+-- Cover every foreign key used by deletes and Library graph traversal.
+create index if not exists workspace_instances_workspace_fk_idx
+on public.workspace_instances (workspace_id);
+create index if not exists workspace_revisions_instance_fk_idx
+on public.workspace_revisions (instance_id);
+create index if not exists workspace_revisions_owner_device_fk_idx
+on public.workspace_revisions (user_id, source_device_id);
+create index if not exists workspace_revisions_parent_fk_idx
+on public.workspace_revisions (parent_revision_id);
+create index if not exists workspace_revisions_workspace_fk_idx
+on public.workspace_revisions (workspace_id);
+create index if not exists workspace_transfers_destination_instance_fk_idx
+on public.workspace_transfers (destination_instance_id);
+create index if not exists workspace_transfers_revision_fk_idx
+on public.workspace_transfers (revision_id);
+create index if not exists workspace_transfers_source_instance_fk_idx
+on public.workspace_transfers (source_instance_id);
+create index if not exists workspace_transfers_workspace_fk_idx
+on public.workspace_transfers (workspace_id);
+
+-- Every Workspace Library table is private to its authenticated owner.
+alter table public.cloud_workspaces enable row level security;
+alter table public.cloud_workspaces force row level security;
+alter table public.workspace_instances enable row level security;
+alter table public.workspace_instances force row level security;
+alter table public.workspace_revisions enable row level security;
+alter table public.workspace_revisions force row level security;
+alter table public.workspace_transfers enable row level security;
+alter table public.workspace_transfers force row level security;
+
+do $workspace_library_policies$
+declare table_name text;
+begin
+  foreach table_name in array array[
+    'cloud_workspaces', 'workspace_instances',
+    'workspace_revisions', 'workspace_transfers'
+  ] loop
+    execute format('drop policy if exists %I on public.%I', table_name || '_select_own', table_name);
+    execute format('create policy %I on public.%I for select to authenticated using ((select auth.uid()) = user_id)', table_name || '_select_own', table_name);
+    execute format('drop policy if exists %I on public.%I', table_name || '_insert_own', table_name);
+    execute format('create policy %I on public.%I for insert to authenticated with check ((select auth.uid()) = user_id)', table_name || '_insert_own', table_name);
+    execute format('drop policy if exists %I on public.%I', table_name || '_update_own', table_name);
+    execute format('create policy %I on public.%I for update to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id)', table_name || '_update_own', table_name);
+    execute format('drop policy if exists %I on public.%I', table_name || '_delete_own', table_name);
+    execute format('create policy %I on public.%I for delete to authenticated using ((select auth.uid()) = user_id)', table_name || '_delete_own', table_name);
+  end loop;
+end
+$workspace_library_policies$;
+
+revoke all on table public.cloud_workspaces from anon, authenticated;
+revoke all on table public.workspace_instances from anon, authenticated;
+revoke all on table public.workspace_revisions from anon, authenticated;
+revoke all on table public.workspace_transfers from anon, authenticated;
+grant select, insert, update, delete on table public.cloud_workspaces to authenticated;
+grant select, insert, update, delete on table public.workspace_instances to authenticated;
+grant select, insert, update, delete on table public.workspace_revisions to authenticated;
+grant select, insert, update, delete on table public.workspace_transfers to authenticated;
+grant all on table public.cloud_workspaces to service_role;
+grant all on table public.workspace_instances to service_role;
+grant all on table public.workspace_revisions to service_role;
+grant all on table public.workspace_transfers to service_role;

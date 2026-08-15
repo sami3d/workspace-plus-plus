@@ -12,6 +12,31 @@ struct CapturedChromeWindow: Codable, Sendable {
         let id: String
         let title: String
         let url: String
+        let pinned: Bool?
+        let groupKey: String?
+        let groupTitle: String?
+        let groupColor: String?
+        let groupCollapsed: Bool?
+
+        init(
+            id: String,
+            title: String,
+            url: String,
+            pinned: Bool? = nil,
+            groupKey: String? = nil,
+            groupTitle: String? = nil,
+            groupColor: String? = nil,
+            groupCollapsed: Bool? = nil
+        ) {
+            self.id = id
+            self.title = title
+            self.url = url
+            self.pinned = pinned
+            self.groupKey = groupKey
+            self.groupTitle = groupTitle
+            self.groupColor = groupColor
+            self.groupCollapsed = groupCollapsed
+        }
     }
 
     let id: String
@@ -38,7 +63,11 @@ struct ChromeSessionAdapter: Sendable {
     }
 
     func capture() async throws -> [CapturedChromeWindow] {
-        try await Task.detached(priority: .utility) {
+        if let extensionWindows = try? ChromeExtensionBridge().capturedWindows(),
+           !extensionWindows.isEmpty {
+            return extensionWindows
+        }
+        return try await Task.detached(priority: .utility) {
             let script = #"""
             const chrome = Application("Google Chrome");
             const result = chrome.windows().map((window) => ({
@@ -50,7 +79,12 @@ struct ChromeSessionAdapter: Sendable {
               tabs: window.tabs().map((tab) => ({
                 id: String(tab.id()),
                 title: String(tab.title()),
-                url: String(tab.url())
+                url: String(tab.url()),
+                pinned: null,
+                groupKey: null,
+                groupTitle: null,
+                groupColor: null,
+                groupCollapsed: null
               }))
             }));
             JSON.stringify(result);
@@ -90,6 +124,12 @@ struct ChromeSessionAdapter: Sendable {
 
     func restore(windows: [WorkspaceCapturedWindow]) async throws {
         guard !windows.isEmpty else { return }
+        if windows.contains(where: { window in
+            window.tabs.contains { $0.isPinned != nil || $0.groupTitle != nil }
+        }), ChromeExtensionBridge().isReceivingSnapshots {
+            try ChromeExtensionBridge().requestRestore(windows: windows)
+            return
+        }
         let script = windows.map { window -> String in
             let tabs = window.tabs.sorted { $0.index < $1.index }
             let firstURL = tabs.first?.url ?? "chrome://newtab/"

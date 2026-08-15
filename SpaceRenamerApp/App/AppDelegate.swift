@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cloudSync: CloudSyncManager!
     private var historyRestorer: WorkspaceSessionRestorer!
     private var prefs: PreferencesWindowController?
+    private var workspaceLibrary: WorkspaceLibraryWindowController?
     private var spaceIDsObserver: AnyCancellable?
     private var raycastSpaceObserver: AnyCancellable?
     private var raycastNameObserver: NSObjectProtocol?
@@ -67,8 +68,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switcher: switcher,
             openMoveWindowPicker: { [weak self] in self?.moveWindowPicker.showPicker() },
             createWorkspace: { [weak self] in self?.virtualSpaceCreator.requestCreation() },
+            openWorkspaceLibrary: { [weak self] in self?.showWorkspaceLibrary() },
             openPreferences: { [weak self] in self?.showPreferences() }
         )
+
+        // The Chrome companion ships inside Workspace++. Keep its stable copy
+        // and native-host registration current automatically. Chrome alone
+        // owns the remaining one-time extension approval.
+        do {
+            _ = try ChromeExtensionBridge().installBundledComponents()
+        } catch {
+            NSLog("Workspace++: Chrome companion preparation failed: %@",
+                  error.localizedDescription)
+        }
 
         // Mission Control overlay labels (per-Space window with two visual
         // modes). Disabled by default; enabled via Preferences. The manager
@@ -164,6 +176,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             )
         }
         prefs?.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func showWorkspaceLibrary() {
+        if workspaceLibrary == nil {
+            workspaceLibrary = WorkspaceLibraryWindowController(
+                cloud: cloudSync,
+                restorer: historyRestorer,
+                monitor: monitor,
+                names: names
+            )
+        }
+        workspaceLibrary?.showWindow(nil)
+        workspaceLibrary?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
