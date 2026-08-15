@@ -1,18 +1,27 @@
 import Foundation
+import LocalAuthentication
 import Security
 
 enum CloudKeychain {
     private static let service = "com.saint.SpaceRenamer.cloud"
     private static let account = "supabase-session"
 
-    static func loadSession() throws -> CloudSession? {
-        let query: [String: Any] = [
+    static func loadSession(allowInteraction: Bool = false) throws -> CloudSession? {
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
+        if !allowInteraction {
+            // Never let an automatic launch-time cloud restore hold the whole
+            // menu-bar app behind a password dialog. An explicitly initiated
+            // account action may opt into interaction when appropriate.
+            let context = LAContext()
+            context.interactionNotAllowed = true
+            query[kSecUseAuthenticationContext as String] = context
+        }
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecItemNotFound { return nil }

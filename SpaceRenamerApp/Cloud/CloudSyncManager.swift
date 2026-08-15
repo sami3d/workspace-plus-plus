@@ -35,13 +35,11 @@ final class CloudSyncManager: ObservableObject {
         }
 
         if let configuration = CloudConfiguration.bundled() {
-            let session = try? CloudKeychain.loadSession()
             client = SupabaseCloudClient(
                 configuration: configuration,
-                session: session
+                session: nil
             )
-            state = session.map { .signedIn(email: $0.email, lastSync: nil) }
-                ?? .signedOut(nil)
+            state = .signedOut(nil)
         } else {
             client = nil
             state = .unavailable("Cloud sync is being connected to the Workspace++ service.")
@@ -63,6 +61,13 @@ final class CloudSyncManager: ObservableObject {
         bootstrapTask?.cancel()
         bootstrapTask = Task { [weak self] in
             guard let self else { return }
+            // This may display macOS's Keychain authorization dialog. Keeping
+            // it out of init lets AppDelegate create and publish the menu-bar
+            // item before any system prompt can pause startup.
+            let storedSession = await Task.detached(priority: .utility) {
+                try? CloudKeychain.loadSession()
+            }.value
+            await client.restoreSession(storedSession)
             if let session = await client.restoredSession() {
                 state = .syncing(email: session.email)
                 await synchronize(email: session.email)

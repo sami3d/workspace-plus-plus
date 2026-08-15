@@ -78,7 +78,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self,
                   let id = self.monitor.spaces.first(where: { $0.storageID == storageID })?.id
             else { return }
-            do { try self.switcher.switch(to: id) }
+            do {
+                try self.switcher.switch(to: id)
+                self.monitor.refreshAfterSpaceChange(targetID: id)
+            }
             catch { NSLog("Workspace++: hotkey switch failed: \(error)") }
         }
         hotkeys.onOpenMenu = { [weak self] in self?.menuBar.openMenu() }
@@ -130,6 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         do {
             try switcher.switch(to: managedSpaceID)
+            monitor.refreshAfterSpaceChange(targetID: managedSpaceID)
         } catch {
             NSLog("Workspace++: Raycast switch failed for \(storageID): \(error)")
         }

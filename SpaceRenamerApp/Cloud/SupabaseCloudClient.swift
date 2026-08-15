@@ -76,6 +76,10 @@ actor SupabaseCloudClient {
 
     func restoredSession() -> CloudSession? { session }
 
+    func restoreSession(_ restoredSession: CloudSession?) {
+        session = restoredSession
+    }
+
     func signUp(email: String, password: String) async throws -> CloudSession {
         let response: AuthResponse = try await authRequest(
             path: "auth/v1/signup",

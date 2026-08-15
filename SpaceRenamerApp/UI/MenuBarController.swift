@@ -5,7 +5,7 @@ import SpaceRenamerCore
 
 @MainActor
 final class MenuBarController: NSObject, NSMenuDelegate {
-    private let statusItem: NSStatusItem
+    private var statusItem: NSStatusItem
     private let monitor: SpaceMonitor
     private let names: NameStore
     private let switcher: SwitcherEngine
@@ -17,6 +17,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private var commandKeyMonitor: Any?
     private let menu = NSMenu()
     private var perDisplayLabels: PerDisplayMenuBarLabelManager!
+    private var forceCustomMenuBarLabel = false
 
     init(monitor: SpaceMonitor,
          names: NameStore,
@@ -32,20 +33,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         self.createWorkspace = createWorkspace
         self.openPreferences = openPreferences
         super.init()
-        setStatusTitle("Desktop")
-        if let icon = NSImage(systemSymbolName: "display", accessibilityDescription: "Desktop") {
-            icon.isTemplate = true                       // adapts to light/dark menu bar + highlight
-            statusItem.button?.image = icon
-            statusItem.button?.imagePosition = .imageLeading
-            statusItem.button?.imageHugsTitle = true     // keep icon next to the name
-        }
         menu.delegate = self
         // NSMenu.autoenablesItems defaults to true, which makes AppKit ignore
         // our manual `item.isEnabled = false` and re-enable any item whose
         // target responds to its action. We manage enabled state ourselves
         // (disabled rows for unreachable / >9 desktops, the hint item).
         menu.autoenablesItems = false
-        statusItem.menu = menu
+        configureNativeStatusItem()
         perDisplayLabels = PerDisplayMenuBarLabelManager(statusItem: statusItem, menu: menu)
         installCommandKeyMonitor()
 
@@ -70,6 +64,9 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             .sink { [weak self] _ in self?.refreshTitle() }
             .store(in: &cancellables)
         refreshTitle()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.repairStatusItemIfOffscreen()
+        }
     }
 
     /// Programmatically toggle the status-item menu (used by the global open-menu hotkey
@@ -88,8 +85,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// snapshot so the Workspace++ control cannot remain invisible.
     func recoverAfterDisplayTransition() {
         monitor.reload()
-        perDisplayLabels.resetAfterDisplayTransition()
-        refreshTitle()
+        recreateStatusItem()
     }
 
     // MARK: - NSMenuDelegate
@@ -111,6 +107,59 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     // MARK: - Private helpers
+
+    private func configureNativeStatusItem() {
+        // A named status item gets a stable, valid menu-bar placement. Anonymous
+        // items can inherit a stale off-screen scene after a virtual display is
+        // removed, even across process and SystemUIServer restarts.
+        statusItem.autosaveName = "WorkspacePlusPlus.main.v2"
+        statusItem.isVisible = true
+        statusItem.button?.isHidden = false
+        statusItem.button?.window?.alphaValue = 1
+        setStatusTitle("Desktop")
+        if let icon = NSImage(systemSymbolName: "display", accessibilityDescription: "Desktop") {
+            icon.isTemplate = true
+            statusItem.button?.image = icon
+            statusItem.button?.imagePosition = .imageLeading
+            statusItem.button?.imageHugsTitle = true
+        }
+        statusItem.length = NSStatusItem.variableLength
+        statusItem.menu = menu
+    }
+
+    /// A temporary display can leave AppKit's status-item scene attached to
+    /// coordinates that no longer belong to a menu bar. Reusing that button
+    /// preserves the bad scene, so remove it from NSStatusBar and create a
+    /// genuinely new native item against the settled display topology.
+    private func recreateStatusItem() {
+        perDisplayLabels?.resetAfterDisplayTransition()
+        NSStatusBar.system.removeStatusItem(statusItem)
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        configureNativeStatusItem()
+        perDisplayLabels = PerDisplayMenuBarLabelManager(statusItem: statusItem, menu: menu)
+        refreshTitle()
+    }
+
+    private func repairStatusItemIfOffscreen() {
+        guard let window = statusItem.button?.window else {
+            forceCustomMenuBarLabel = true
+            refreshTitle()
+            return
+        }
+        let sceneCenter = NSPoint(x: window.frame.midX, y: window.frame.midY)
+        let hasDrawableScene = window.frame.width > 1 && window.frame.height > 1
+            && NSScreen.screens.contains(where: {
+                $0.frame.contains(sceneCenter)
+                    && sceneCenter.y > $0.frame.minY + 1
+            })
+        guard !hasDrawableScene else {
+            return
+        }
+        NSLog("Workspace++: using custom renderer for off-screen status item at %@",
+              NSStringFromRect(window.frame))
+        forceCustomMenuBarLabel = true
+        refreshTitle()
+    }
 
     private func populate() {
         menu.removeAllItems()
@@ -655,7 +704,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
             )
         }
 
-        if names.menuBarDisplayMode == .perDisplay, monitor.displays.count > 1 {
+        if names.menuBarDisplayMode == .perDisplay,
+           monitor.displays.count > 1 || forceCustomMenuBarLabel {
             perDisplayLabels.setEnabled(true)
             perDisplayLabels.update(
                 displays: monitor.displays,
@@ -710,6 +760,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         guard let id = sender.representedObject as? String else { return }
         do {
             try switcher.switch(to: id)
+            monitor.refreshAfterSpaceChange(targetID: id)
         } catch {
             NSLog("Workspace++: switch failed for \(id): \(error)")
         }

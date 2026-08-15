@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import SpaceRenamerCore
 
 enum MenuBarTitleStyle {
@@ -167,9 +168,9 @@ final class PerDisplayMenuBarLabelManager: NSObject {
     }
 
     func setEnabled(_ enabled: Bool) {
-        guard enabled != isEnabled else { return }
-        isEnabled = enabled
         if enabled {
+            guard !isEnabled else { return }
+            isEnabled = true
             statusItem.menu = nil
             // The status item must RESERVE the label's real width in the
             // status bar. A zero-width anchor paints over space macOS
@@ -182,15 +183,29 @@ final class PerDisplayMenuBarLabelManager: NSObject {
             statusItem.button?.alphaValue = 0
             scheduleRebuild()
         } else {
-            entries.values.forEach { $0.panel.orderOut(nil) }
-            stopObservingAnchorWindow()
-            statusItem.button?.alphaValue = 1
-            statusItem.button?.isEnabled = true
-            statusItem.button?.image = nativeImage
-            statusItem.button?.imagePosition = .imageLeading
-            statusItem.button?.imageHugsTitle = true
-            statusItem.menu = menu
+            // Always restore the native item, even if our bookkeeping already
+            // says per-display mode is off. A temporary display transition can
+            // invalidate the status-bar scene while leaving `isEnabled` false.
+            if isEnabled {
+                entries.values.forEach { $0.panel.orderOut(nil) }
+                stopObservingAnchorWindow()
+            }
+            isEnabled = false
+            restoreNativeStatusItem()
         }
+    }
+
+    private func restoreNativeStatusItem() {
+        statusItem.isVisible = true
+        statusItem.length = NSStatusItem.variableLength
+        statusItem.button?.isHidden = false
+        statusItem.button?.window?.alphaValue = 1
+        statusItem.button?.alphaValue = 1
+        statusItem.button?.isEnabled = true
+        statusItem.button?.image = nativeImage
+        statusItem.button?.imagePosition = .imageLeading
+        statusItem.button?.imageHugsTitle = true
+        statusItem.menu = menu
     }
 
     /// Re-establish the native status item after a temporary display has been
@@ -204,13 +219,7 @@ final class PerDisplayMenuBarLabelManager: NSObject {
         stopObservingAnchorWindow()
         isEnabled = false
 
-        statusItem.length = NSStatusItem.variableLength
-        statusItem.button?.alphaValue = 1
-        statusItem.button?.isEnabled = true
-        statusItem.button?.image = nativeImage
-        statusItem.button?.imagePosition = .imageLeading
-        statusItem.button?.imageHugsTitle = true
-        statusItem.menu = menu
+        restoreNativeStatusItem()
     }
 
     func update(displays: [ParsedDisplay],
@@ -318,12 +327,35 @@ final class PerDisplayMenuBarLabelManager: NSObject {
         // macOS releases, convertToScreen() applies the scene transform twice
         // and reports a position near the Apple menu. The window and button
         // frames are already in compatible coordinates, so compose them.
-        let anchorFrame = NSRect(
+        let sceneFrame = NSRect(
             x: anchorWindow.frame.minX + anchorButton.frame.minX,
             y: anchorWindow.frame.minY + anchorButton.frame.minY,
             width: anchorButton.frame.width,
             height: anchorButton.frame.height
         )
+        // A virtual display transition can leave the AppKit scene window at
+        // y=-menuBarHeight even though Accessibility still reports the real,
+        // reserved status-bar slot. Prefer that screen-space frame whenever
+        // the scene frame no longer intersects a physical display.
+        let reportedAccessibilityFrame = statusItemAccessibilityFrame()
+            ?? anchorButton.accessibilityFrame()
+        let primaryScreen = NSScreen.screens.first
+        let accessibilityFrame: NSRect
+        if let primaryScreen,
+           reportedAccessibilityFrame.maxX < primaryScreen.frame.midX {
+            accessibilityFrame = NSRect(
+                x: primaryScreen.frame.maxX - anchorButton.frame.width,
+                y: primaryScreen.frame.maxY - anchorButton.frame.height,
+                width: anchorButton.frame.width,
+                height: anchorButton.frame.height
+            )
+        } else {
+            accessibilityFrame = reportedAccessibilityFrame
+        }
+        let sceneCenter = NSPoint(x: sceneFrame.midX, y: sceneFrame.midY)
+        let sceneIsOnScreen = sceneFrame.width > 1 && sceneFrame.height > 1
+            && NSScreen.screens.contains { $0.frame.contains(sceneCenter) }
+        let anchorFrame = sceneIsOnScreen ? sceneFrame : accessibilityFrame
         let referenceScreen = anchorWindow.screen
             ?? NSScreen.screens.first(where: { $0.frame.intersects(anchorFrame) })
             ?? NSScreen.main
@@ -331,7 +363,7 @@ final class PerDisplayMenuBarLabelManager: NSObject {
         // End at the scene window's trailing edge so the panel sits flush in
         // the reserved slot. Labels narrower than the widest one right-align
         // within it, so they never paint outside the reserved stretch.
-        let trailingOffset = referenceScreen.frame.maxX - anchorWindow.frame.maxX
+        let trailingOffset = referenceScreen.frame.maxX - anchorFrame.maxX
         let verticalInset = max(
             0,
             floor((anchorWindow.frame.height - anchorButton.frame.height) / 2)
@@ -347,7 +379,9 @@ final class PerDisplayMenuBarLabelManager: NSObject {
                 color: label.color,
                 font: anchorButton.font
             )
-            let anchorRight = screen.frame.maxX - trailingOffset
+            let anchorRight = sceneIsOnScreen
+                ? screen.frame.maxX - trailingOffset
+                : fallbackMenuBarRightEdge(on: screen)
             let labelFrame = NSRect(
                 x: anchorRight - controlWidth,
                 y: screen.frame.maxY - anchorFrame.height - verticalInset,
@@ -361,6 +395,85 @@ final class PerDisplayMenuBarLabelManager: NSObject {
         }
     }
 
+    /// The first visible right-side menu-bar item is the authoritative edge of
+    /// free menu-bar space. WindowServer publishes these status-item windows
+    /// even when our own AppKit status scene has stale local coordinates.
+    private func fallbackMenuBarRightEdge(on screen: NSScreen) -> CGFloat {
+        guard let windows = CGWindowListCopyWindowInfo(
+            .optionOnScreenOnly, kCGNullWindowID
+        ) as? [[String: Any]] else { return screen.frame.maxX }
+
+        let candidates = windows.compactMap { window -> CGFloat? in
+            guard (window[kCGWindowLayer as String] as? NSNumber)?.intValue
+                    == NSWindow.Level.statusBar.rawValue,
+                  (window[kCGWindowOwnerName as String] as? String) == "Control Center",
+                  let rawBounds = window[kCGWindowBounds as String] as? [String: Any],
+                  let bounds = CGRect(dictionaryRepresentation: rawBounds as CFDictionary),
+                  bounds.height <= 40,
+                  bounds.minX >= screen.frame.minX,
+                  bounds.minX < screen.frame.maxX else { return nil }
+            return bounds.minX
+        }
+        return (candidates.min() ?? screen.frame.maxX) - 6
+    }
+
+    /// AppKit's status-bar scene can retain local/off-screen coordinates after
+    /// a display transition. The app's AX menu-bar item still exposes the real
+    /// reserved slot in global (top-left-origin) coordinates, which lets the
+    /// replacement panel land exactly where the native item should be.
+    private func statusItemAccessibilityFrame() -> NSRect? {
+        let application = AXUIElementCreateApplication(ProcessInfo.processInfo.processIdentifier)
+        var rawMenuBar: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            application, kAXMenuBarAttribute as CFString, &rawMenuBar
+        ) == .success, let rawMenuBar else { return nil }
+        let menuBar = unsafeDowncast(rawMenuBar, to: AXUIElement.self)
+
+        var rawChildren: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            menuBar, kAXChildrenAttribute as CFString, &rawChildren
+        ) == .success,
+              let items = rawChildren as? [AXUIElement] else { return nil }
+
+        for item in items {
+            var rawDescription: CFTypeRef?
+            AXUIElementCopyAttributeValue(
+                item, kAXDescriptionAttribute as CFString, &rawDescription
+            )
+            guard (rawDescription as? String) == "Desktop",
+                  let position = axPoint(kAXPositionAttribute as CFString, of: item),
+                  let size = axSize(kAXSizeAttribute as CFString, of: item),
+                  let primaryTop = NSScreen.screens.first?.frame.maxY else { continue }
+            return NSRect(
+                x: position.x,
+                y: primaryTop - position.y - size.height,
+                width: size.width,
+                height: size.height
+            )
+        }
+        return nil
+    }
+
+    private func axPoint(_ attribute: CFString, of element: AXUIElement) -> CGPoint? {
+        var raw: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute, &raw) == .success,
+              let raw else { return nil }
+        let value = unsafeDowncast(raw, to: AXValue.self)
+        guard AXValueGetType(value) == .cgPoint else { return nil }
+        var point = CGPoint.zero
+        return AXValueGetValue(value, .cgPoint, &point) ? point : nil
+    }
+
+    private func axSize(_ attribute: CFString, of element: AXUIElement) -> CGSize? {
+        var raw: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute, &raw) == .success,
+              let raw else { return nil }
+        let value = unsafeDowncast(raw, to: AXValue.self)
+        guard AXValueGetType(value) == .cgSize else { return nil }
+        var size = CGSize.zero
+        return AXValueGetValue(value, .cgSize, &size) ? size : nil
+    }
+
     private func makeEntry() -> Entry {
         let panel = NSPanel(
             contentRect: .zero,
@@ -371,7 +484,10 @@ final class PerDisplayMenuBarLabelManager: NSObject {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        panel.level = .statusBar
+        // Keep this independent of AppKit's status-bar scene. A virtual
+        // display can leave that scene with a stale transform that remaps an
+        // otherwise-correct global panel frame to x=0/y=-menuBarHeight.
+        panel.level = .popUpMenu
         // `.transient` keeps this menu-bar replacement out of Mission Control.
         // The per-Space label windows intentionally omit it because those
         // windows are the names rendered inside the workspace thumbnails.
