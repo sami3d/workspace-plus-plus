@@ -49,7 +49,10 @@ esac
 
 mkdir -p "$DIST"
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$APP" "$ARCHIVE"
-shasum -a 256 "$ARCHIVE" >"$ARCHIVE.sha256"
+(
+  cd "$DIST"
+  shasum -a 256 "$(basename "$ARCHIVE")" >"$(basename "$ARCHIVE").sha256"
+)
 
 printf '%s\n' "Created:"
 printf '  %s\n' "$ARCHIVE" "$ARCHIVE.sha256"
