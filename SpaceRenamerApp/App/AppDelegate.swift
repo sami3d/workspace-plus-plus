@@ -49,7 +49,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             names: names,
             switcher: switcher
         )
-        virtualSpaceCreator = VirtualSpaceCreationController(monitor: monitor)
+        virtualSpaceCreator = VirtualSpaceCreationController(
+            monitor: monitor,
+            onDisplayTopologyRestored: { [weak self] in
+                self?.menuBar.recoverAfterDisplayTransition()
+            }
+        )
         menuBar = MenuBarController(
             monitor: monitor,
             names: names,

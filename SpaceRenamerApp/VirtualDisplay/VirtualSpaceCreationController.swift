@@ -29,10 +29,18 @@ enum VirtualSpaceCreationError: LocalizedError {
 final class VirtualSpaceCreationController {
     private let monitor: SpaceMonitor
     private let missionControl = MissionControlDesktopCreator()
+    private let originalSpaceSwitcher: SpaceSwitching
+    private let onDisplayTopologyRestored: () -> Void
     private var isCreating = false
 
-    init(monitor: SpaceMonitor) {
+    init(
+        monitor: SpaceMonitor,
+        originalSpaceSwitcher: SpaceSwitching = RelativeArrowSpaceSwitcher(),
+        onDisplayTopologyRestored: @escaping () -> Void = {}
+    ) {
         self.monitor = monitor
+        self.originalSpaceSwitcher = originalSpaceSwitcher
+        self.onDisplayTopologyRestored = onDisplayTopologyRestored
     }
 
     func requestCreation() {
@@ -49,7 +57,14 @@ final class VirtualSpaceCreationController {
         isCreating = true
         Task { [weak self] in
             guard let self else { return }
-            defer { self.isCreating = false }
+            defer {
+                self.isCreating = false
+                self.onDisplayTopologyRestored()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    [weak self] in
+                    self?.onDisplayTopologyRestored()
+                }
+            }
             do {
                 let result = try await self.createAndMeasure()
                 self.showResult(result)
@@ -69,6 +84,7 @@ final class VirtualSpaceCreationController {
         let originalIDs = Set(monitor.spaces.map(\.storageID))
         let originalDisplayIDs = Set(monitor.displays.map(\.id))
         let originalCGDisplayIDs = activeDisplayIDs()
+        let originalActiveSpaceID = monitor.activeID
         NSLog("Workspace++ virtual-space proof: starting with %d Spaces", originalIDs.count)
         let originalPointer = CGEvent(source: nil)?.location ?? .zero
         let session = try VirtualDisplaySession()
@@ -159,6 +175,19 @@ final class VirtualSpaceCreationController {
         )
         guard !newSpaces.isEmpty else {
             throw VirtualSpaceCreationError.noSurvivingSpace
+        }
+
+        if let originalActiveSpaceID,
+           monitor.activeID != originalActiveSpaceID {
+            if originalSpaceSwitcher.setCurrentSpace(
+                managedSpaceID: originalActiveSpaceID
+            ) {
+                try await Task.sleep(for: .milliseconds(650))
+                monitor.reload()
+                NSLog("Workspace++ virtual-space proof: restored original Space")
+            } else {
+                NSLog("Workspace++ virtual-space proof: could not restore original Space")
+            }
         }
         return Result(newSpaces: newSpaces)
     }

@@ -193,6 +193,26 @@ final class PerDisplayMenuBarLabelManager: NSObject {
         }
     }
 
+    /// Re-establish the native status item after a temporary display has been
+    /// attached and removed. WindowServer can discard the status-item scene
+    /// during that transition while `isEnabled` still reflects the old
+    /// topology; `setEnabled(false)` would then be skipped by its guard.
+    func resetAfterDisplayTransition() {
+        entries.values.forEach { $0.panel.close() }
+        entries.removeAll()
+        currentLabels.removeAll()
+        stopObservingAnchorWindow()
+        isEnabled = false
+
+        statusItem.length = NSStatusItem.variableLength
+        statusItem.button?.alphaValue = 1
+        statusItem.button?.isEnabled = true
+        statusItem.button?.image = nativeImage
+        statusItem.button?.imagePosition = .imageLeading
+        statusItem.button?.imageHugsTitle = true
+        statusItem.menu = menu
+    }
+
     func update(displays: [ParsedDisplay],
                 activeIDsByDisplay: [String: String],
                 names: NameStore) {

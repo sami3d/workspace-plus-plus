@@ -83,6 +83,15 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
     }
 
+    /// A private virtual display temporarily changes the menu-bar scene
+    /// topology. Recreate our anchor/panels from the final physical-display
+    /// snapshot so the Workspace++ control cannot remain invisible.
+    func recoverAfterDisplayTransition() {
+        monitor.reload()
+        perDisplayLabels.resetAfterDisplayTransition()
+        refreshTitle()
+    }
+
     // MARK: - NSMenuDelegate
 
     func menuNeedsUpdate(_ menu: NSMenu) {
