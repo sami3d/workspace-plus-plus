@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeys: HotkeyManager!
     private var overlay: SpaceLabelOverlayManager!
     private var moveWindowPicker: MoveWindowPickerController!
+    private var virtualSpaceCreator: VirtualSpaceCreationController!
     private var cloudSync: CloudSyncManager!
     private var prefs: PreferencesWindowController?
     private var spaceIDsObserver: AnyCancellable?
@@ -48,11 +49,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             names: names,
             switcher: switcher
         )
+        virtualSpaceCreator = VirtualSpaceCreationController(monitor: monitor)
         menuBar = MenuBarController(
             monitor: monitor,
             names: names,
             switcher: switcher,
             openMoveWindowPicker: { [weak self] in self?.moveWindowPicker.showPicker() },
+            createWorkspace: { [weak self] in self?.virtualSpaceCreator.requestCreation() },
             openPreferences: { [weak self] in self?.showPreferences() }
         )
 

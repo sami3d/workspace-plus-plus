@@ -49,6 +49,7 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         MACOSX_DEPLOYMENT_TARGET: "13.0"
         SWIFT_VERSION: "6.0"
+        SWIFT_OBJC_BRIDGING_HEADER: "SpaceRenamerApp/App/SpaceRenamer-Bridging-Header.h"
         # Stable self-signed identity so the Accessibility (TCC) grant survives
         # rebuilds (ad-hoc "-" had no stable Designated Requirement, so TCC never
         # honored the grant and synthesized switches were silently dropped).

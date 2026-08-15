@@ -10,6 +10,7 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     private let names: NameStore
     private let switcher: SwitcherEngine
     private let openMoveWindowPicker: () -> Void
+    private let createWorkspace: () -> Void
     private let openPreferences: () -> Void
     private let applicationIndex = SpaceApplicationIndex()
     private var cancellables: Set<AnyCancellable> = []
@@ -21,12 +22,14 @@ final class MenuBarController: NSObject, NSMenuDelegate {
          names: NameStore,
          switcher: SwitcherEngine,
          openMoveWindowPicker: @escaping () -> Void,
+         createWorkspace: @escaping () -> Void,
          openPreferences: @escaping () -> Void) {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.monitor = monitor
         self.names = names
         self.switcher = switcher
         self.openMoveWindowPicker = openMoveWindowPicker
+        self.createWorkspace = createWorkspace
         self.openPreferences = openPreferences
         super.init()
         setStatusTitle("Desktop")
@@ -148,6 +151,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         }
 
         menu.addItem(.separator())
+        let createWorkspace = NSMenuItem(
+            title: "Create Workspace (Experimental)…",
+            action: #selector(createWorkspaceClicked),
+            keyEquivalent: ""
+        )
+        createWorkspace.target = self
+        menu.addItem(createWorkspace)
         let moveWindow = NSMenuItem(
             title: "Move Focused Window…",
             action: #selector(moveWindowClicked),
@@ -719,6 +729,8 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func prefsClicked() { openPreferences() }
 
     @objc private func moveWindowClicked() { openMoveWindowPicker() }
+
+    @objc private func createWorkspaceClicked() { createWorkspace() }
 
     @objc private func quitClicked() { NSApp.terminate(nil) }
 }
