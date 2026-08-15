@@ -728,7 +728,11 @@ final class MenuBarController: NSObject, NSMenuDelegate {
 
     private func setStatusTitle(_ title: String) {
         guard let button = statusItem.button else { return }
-        button.attributedTitle = MenuBarTitleStyle.attributed(title, font: button.font)
+        button.attributedTitle = MenuBarTitleStyle.attributed(
+            MenuBarTitleStyle.compactTitle(title),
+            font: button.font
+        )
+        button.toolTip = title
     }
 
     /// Combined mode can show active workspaces from multiple displays. Keep
@@ -748,12 +752,13 @@ final class MenuBarController: NSObject, NSMenuDelegate {
                 ))
             }
             result.append(MenuBarTitleStyle.attributed(
-                label.title,
+                MenuBarTitleStyle.compactTitle(label.title),
                 font: button.font,
                 color: label.color
             ))
         }
         button.attributedTitle = result
+        button.toolTip = labels.map(\.title).joined(separator: " · ")
     }
 
     @objc private func spaceClicked(_ sender: NSMenuItem) {

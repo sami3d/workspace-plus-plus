@@ -3,6 +3,11 @@ import ApplicationServices
 import SpaceRenamerCore
 
 enum MenuBarTitleStyle {
+    /// Keep one unusually long workspace name from crowding other status
+    /// items out of the menu bar. The full name remains available in the menu
+    /// and as the label's tooltip.
+    static let maximumTitleCharacters = 20
+
     static let skyBlue = NSColor(name: nil) { appearance in
         if appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua {
             return NSColor(calibratedRed: 0.35, green: 0.78, blue: 1.0, alpha: 1.0)
@@ -26,6 +31,11 @@ enum MenuBarTitleStyle {
     static func workspaceColor(from hex: String?) -> NSColor {
         guard let hex else { return skyBlue }
         return WorkspaceColor.color(from: hex)
+    }
+
+    static func compactTitle(_ title: String) -> String {
+        guard title.count > maximumTitleCharacters else { return title }
+        return String(title.prefix(maximumTitleCharacters)) + "…"
     }
 }
 
@@ -130,6 +140,7 @@ final class PerDisplayMenuBarLabelManager: NSObject {
 
     private struct ActiveLabel {
         let title: String
+        let fullTitle: String
         let color: NSColor
     }
 
@@ -230,13 +241,15 @@ final class PerDisplayMenuBarLabelManager: NSObject {
                   let space = display.spaces.first(where: { $0.id == activeID }) else {
                 return nil
             }
+            let fullTitle = names.name(
+                for: space.storageID,
+                defaultOrdinal: space.ordinal
+            )
             return (
                 display.id,
                 ActiveLabel(
-                    title: names.name(
-                        for: space.storageID,
-                        defaultOrdinal: space.ordinal
-                    ),
+                    title: MenuBarTitleStyle.compactTitle(fullTitle),
+                    fullTitle: fullTitle,
                     color: MenuBarTitleStyle.workspaceColor(
                         from: names.colorHex(for: space.storageID)
                     )
@@ -364,11 +377,6 @@ final class PerDisplayMenuBarLabelManager: NSObject {
         // the reserved slot. Labels narrower than the widest one right-align
         // within it, so they never paint outside the reserved stretch.
         let trailingOffset = referenceScreen.frame.maxX - anchorFrame.maxX
-        let verticalInset = max(
-            0,
-            floor((anchorWindow.frame.height - anchorButton.frame.height) / 2)
-        )
-
         for (displayID, label) in currentLabels {
             guard let screen = DisplayResolver.screen(for: displayID) else { continue }
             let entry = entries[displayID] ?? makeEntry()
@@ -382,14 +390,23 @@ final class PerDisplayMenuBarLabelManager: NSObject {
             let anchorRight = sceneIsOnScreen
                 ? screen.frame.maxX - trailingOffset
                 : fallbackMenuBarRightEdge(on: screen)
+            // On recent macOS versions the menu bar can be taller than the
+            // 22-point status-item control. Centre the fallback panel inside
+            // that real menu-bar band instead of pinning it to the top edge.
+            let visibleMenuBarHeight = max(
+                0,
+                screen.frame.maxY - screen.visibleFrame.maxY
+            )
+            let menuBarHeight = max(anchorFrame.height, visibleMenuBarHeight)
+            let verticalInset = floor((menuBarHeight - anchorFrame.height) / 2)
             let labelFrame = NSRect(
                 x: anchorRight - controlWidth,
-                y: screen.frame.maxY - anchorFrame.height - verticalInset,
+                y: screen.frame.maxY - menuBarHeight + verticalInset,
                 width: controlWidth,
                 height: anchorFrame.height
             )
             entry.control.frame = NSRect(origin: .zero, size: labelFrame.size)
-            entry.control.toolTip = "\(screen.localizedName): \(label.title)"
+            entry.control.toolTip = "\(screen.localizedName): \(label.fullTitle)"
             entry.panel.setFrame(labelFrame, display: true)
             entry.panel.orderFrontRegardless()
         }
