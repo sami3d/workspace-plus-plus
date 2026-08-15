@@ -369,14 +369,6 @@ final class PerDisplayMenuBarLabelManager: NSObject {
         let sceneIsOnScreen = sceneFrame.width > 1 && sceneFrame.height > 1
             && NSScreen.screens.contains { $0.frame.contains(sceneCenter) }
         let anchorFrame = sceneIsOnScreen ? sceneFrame : accessibilityFrame
-        let referenceScreen = anchorWindow.screen
-            ?? NSScreen.screens.first(where: { $0.frame.intersects(anchorFrame) })
-            ?? NSScreen.main
-        guard let referenceScreen else { return }
-        // End at the scene window's trailing edge so the panel sits flush in
-        // the reserved slot. Labels narrower than the widest one right-align
-        // within it, so they never paint outside the reserved stretch.
-        let trailingOffset = referenceScreen.frame.maxX - anchorFrame.maxX
         for (displayID, label) in currentLabels {
             guard let screen = DisplayResolver.screen(for: displayID) else { continue }
             let entry = entries[displayID] ?? makeEntry()
@@ -387,9 +379,12 @@ final class PerDisplayMenuBarLabelManager: NSObject {
                 color: label.color,
                 font: anchorButton.font
             )
-            let anchorRight = sceneIsOnScreen
-                ? screen.frame.maxX - trailingOffset
-                : fallbackMenuBarRightEdge(on: screen)
+            // A status-item scene has independent geometry on every display.
+            // Mirroring the primary display's trailing offset places the
+            // replacement label incorrectly as soon as another monitor has a
+            // different collection of menu-bar items. Resolve the free edge
+            // from each display's own Control Center windows instead.
+            let anchorRight = fallbackMenuBarRightEdge(on: screen)
             // On recent macOS versions the menu bar can be taller than the
             // 22-point status-item control. Centre the fallback panel inside
             // that real menu-bar band instead of pinning it to the top edge.
@@ -418,7 +413,9 @@ final class PerDisplayMenuBarLabelManager: NSObject {
     private func fallbackMenuBarRightEdge(on screen: NSScreen) -> CGFloat {
         guard let windows = CGWindowListCopyWindowInfo(
             .optionOnScreenOnly, kCGNullWindowID
-        ) as? [[String: Any]] else { return screen.frame.maxX }
+        ) as? [[String: Any]],
+              let primaryTop = NSScreen.screens.first?.frame.maxY
+        else { return screen.frame.maxX }
 
         let candidates = windows.compactMap { window -> CGFloat? in
             guard (window[kCGWindowLayer as String] as? NSNumber)?.intValue
@@ -429,6 +426,18 @@ final class PerDisplayMenuBarLabelManager: NSObject {
                   bounds.height <= 40,
                   bounds.minX >= screen.frame.minX,
                   bounds.minX < screen.frame.maxX else { return nil }
+
+            // CGWindow bounds use a top-left origin relative to the primary
+            // display, while NSScreen uses AppKit's bottom-left coordinates.
+            // Matching only the x-range is ambiguous for vertically stacked
+            // monitors, where both screens commonly start at x=0.
+            let appKitBounds = NSRect(
+                x: bounds.minX,
+                y: primaryTop - bounds.maxY,
+                width: bounds.width,
+                height: bounds.height
+            )
+            guard appKitBounds.intersects(screen.frame) else { return nil }
             return bounds.minX
         }
         return (candidates.min() ?? screen.frame.maxX) - 6
@@ -510,7 +519,6 @@ final class PerDisplayMenuBarLabelManager: NSObject {
         // windows are the names rendered inside the workspace thumbnails.
         panel.collectionBehavior = [
             .canJoinAllSpaces,
-            .stationary,
             .transient,
             .ignoresCycle
         ]

@@ -52,6 +52,7 @@ private final class WorkspaceLibraryViewController: NSViewController,
 
     private final class Node: NSObject {
         enum Kind {
+            case dateGroup(Date)
             case device(CloudWorkspaceDevice)
             case workspace(CloudLibraryWorkspace)
             case instance(CloudWorkspaceInstance)
@@ -163,6 +164,16 @@ private final class WorkspaceLibraryViewController: NSViewController,
         let refresh = NSButton(title: "Refresh", target: self, action: #selector(refresh))
         let chrome = NSButton(title: "Enable Chrome Integration…", target: self,
                               action: #selector(enableChrome))
+        let collapseAll = NSButton(title: "Collapse All", target: self, action: #selector(collapseAllItems))
+        let expandAll = NSButton(title: "Expand All", target: self, action: #selector(expandAllItems))
+        for button in [collapseAll, expandAll] {
+            button.controlSize = .small
+            button.bezelStyle = .rounded
+        }
+        let outlineControls = NSStackView(views: [NSView(), collapseAll, expandAll])
+        outlineControls.orientation = .horizontal
+        outlineControls.spacing = 6
+        outlineControls.distribution = .fill
         let buttons = NSStackView(views: [launchButton, duplicateButton, parkButton, copyButton, moveButton, deleteButton,
                                          NSView(), chrome, save, refresh])
         buttons.orientation = .horizontal
@@ -171,7 +182,7 @@ private final class WorkspaceLibraryViewController: NSViewController,
         status.textColor = .secondaryLabelColor
         status.maximumNumberOfLines = 2
 
-        let stack = NSStackView(views: [split, buttons, status])
+        let stack = NSStackView(views: [outlineControls, split, buttons, status])
         stack.orientation = .vertical
         stack.spacing = 10
         stack.translatesAutoresizingMaskIntoConstraints = false
@@ -181,6 +192,11 @@ private final class WorkspaceLibraryViewController: NSViewController,
             stack.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 14),
             stack.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -14),
             stack.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -12),
+            // NSStackView otherwise uses NSSplitView's 181-point intrinsic
+            // width (the sidebar plus divider) and leaves the outline pane at
+            // zero width. Pin the split view to the full content width.
+            split.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            outlineControls.widthAnchor.constraint(equalTo: stack.widthAnchor),
             split.heightAnchor.constraint(greaterThanOrEqualToConstant: 420),
             status.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
@@ -223,6 +239,8 @@ private final class WorkspaceLibraryViewController: NSViewController,
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
+        guard let tableView = notification.object as? NSTableView,
+              tableView === sidebar else { return }
         guard sidebar.selectedRow >= 0 else { return }
         selectedFilter = Filter.allCases[sidebar.selectedRow]
         rebuild()
@@ -252,6 +270,7 @@ private final class WorkspaceLibraryViewController: NSViewController,
         subtitle.font = .systemFont(ofSize: 11)
         subtitle.textColor = .secondaryLabelColor
         subtitle.lineBreakMode = .byTruncatingMiddle
+        subtitle.isHidden = node.subtitle.isEmpty
         let labels = NSStackView(views: [title, subtitle])
         labels.orientation = .vertical
         labels.alignment = .leading
@@ -270,6 +289,12 @@ private final class WorkspaceLibraryViewController: NSViewController,
             labels.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
         ])
         return cell
+    }
+
+    func outlineView(_ outlineView: NSOutlineView, heightOfRowByItem item: Any) -> CGFloat {
+        guard let node = item as? Node else { return outlineView.rowHeight }
+        if case .dateGroup = node.kind { return 30 }
+        return outlineView.rowHeight
     }
 
     func outlineViewSelectionDidChange(_ notification: Notification) {
@@ -308,9 +333,11 @@ private final class WorkspaceLibraryViewController: NSViewController,
                 let deviceWorkspaceIDs = Set(library.instances.filter {
                     $0.deviceID == device.deviceID && $0.deletedAt == nil
                 }.map(\.workspaceID))
-                let children = sorted.filter { deviceWorkspaceIDs.contains($0.id) }.map {
-                    workspaceNode($0, library: library, deviceID: device.deviceID)
-                }
+                let children = dateGroups(
+                    for: sorted.filter { deviceWorkspaceIDs.contains($0.id) },
+                    library: library,
+                    deviceID: device.deviceID
+                )
                 return Node(
                     kind: .device(device),
                     title: device.name,
@@ -320,10 +347,49 @@ private final class WorkspaceLibraryViewController: NSViewController,
                 )
             }.filter { !$0.children.isEmpty }
         } else {
-            roots = sorted.map { workspaceNode($0, library: library) }
+            roots = dateGroups(for: sorted, library: library)
         }
         outline.reloadData()
-        roots.forEach { outline.expandItem($0) }
+        expandDateSections()
+    }
+
+    private func dateGroups(
+        for workspaces: [CloudLibraryWorkspace],
+        library: WorkspaceLibrary,
+        deviceID: UUID? = nil
+    ) -> [Node] {
+        let calendar = Calendar.autoupdatingCurrent
+        let grouped = Dictionary(grouping: workspaces) { workspace in
+            calendar.startOfDay(for: library.latestRevision(for: workspace)?.createdAt ?? workspace.updatedAt)
+        }
+        return grouped.keys.sorted(by: >).map { date in
+            let children = (grouped[date] ?? []).sorted {
+                $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
+            }.map { workspaceNode($0, library: library, deviceID: deviceID) }
+            return Node(
+                kind: .dateGroup(date),
+                title: dateSectionTitle(date),
+                subtitle: "",
+                symbol: "calendar",
+                children: children
+            )
+        }
+    }
+
+    private func dateSectionTitle(_ date: Date) -> String {
+        let calendar = Calendar.autoupdatingCurrent
+        if calendar.isDateInToday(date) { return "Today" }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        return date.formatted(.dateTime.weekday(.wide).day().month(.wide).year())
+    }
+
+    private func expandDateSections() {
+        for root in roots {
+            outline.expandItem(root)
+            if case .device = root.kind {
+                root.children.forEach { outline.expandItem($0) }
+            }
+        }
     }
 
     private func workspaceNode(
@@ -351,10 +417,11 @@ private final class WorkspaceLibraryViewController: NSViewController,
         let detail = latest.map {
             "\($0.snapshot.applications.count) apps · \($0.snapshot.totalWindowCount) windows · \($0.snapshot.totalTabCount) tabs"
         } ?? "No revision"
+        let category = workspace.categoryName.map { "\($0) · " } ?? ""
         return Node(
             kind: .workspace(workspace),
             title: workspace.name,
-            subtitle: "\(detail) · \(instances.count) instance\(instances.count == 1 ? "" : "s")\(pending > 0 ? " · \(pending) pending" : "")",
+            subtitle: "\(category)\(detail) · \(instances.count) instance\(instances.count == 1 ? "" : "s")\(pending > 0 ? " · \(pending) pending" : "")",
             symbol: workspace.isArchived ? "archivebox.fill" : "rectangle.3.group",
             children: instances
         )
@@ -524,6 +591,8 @@ private final class WorkspaceLibraryViewController: NSViewController,
 
     @objc private func saveAll() { Task { await cloud.captureWorkspaceHistoryNow() } }
     @objc private func refresh() { Task { await cloud.refreshWorkspaceLibrary() } }
+    @objc private func collapseAllItems() { outline.collapseItem(nil, collapseChildren: true) }
+    @objc private func expandAllItems() { outline.expandItem(nil, expandChildren: true) }
 
     @objc private func enableChrome() {
         do {
@@ -553,6 +622,9 @@ private final class WorkspaceLibraryViewController: NSViewController,
     }
 
     private func icon(for node: Node) -> NSImage {
+        if case .workspace(let workspace) = node.kind {
+            return workspaceColorSwatch(hex: workspace.colorHex)
+        }
         if case .application(let app) = node.kind,
            let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: app.bundleIdentifier) {
             return NSWorkspace.shared.icon(forFile: url.path)
@@ -560,7 +632,19 @@ private final class WorkspaceLibraryViewController: NSViewController,
         return NSImage(systemSymbolName: node.symbol, accessibilityDescription: nil) ?? NSImage()
     }
 
+    private func workspaceColorSwatch(hex: String?) -> NSImage {
+        let image = NSImage(size: NSSize(width: 16, height: 16))
+        image.lockFocus()
+        WorkspaceColor.color(from: hex).setFill()
+        NSBezierPath(roundedRect: NSRect(x: 1, y: 1, width: 14, height: 14),
+                     xRadius: 3, yRadius: 3).fill()
+        image.unlockFocus()
+        image.isTemplate = false
+        return image
+    }
+
     private func nodeWeight(_ node: Node) -> NSFont.Weight {
+        if case .dateGroup = node.kind { return .semibold }
         if case .device = node.kind { return .semibold }
         if case .workspace = node.kind { return .semibold }
         if case .instance = node.kind { return .medium }

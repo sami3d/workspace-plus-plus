@@ -388,13 +388,19 @@ actor SupabaseCloudClient {
     }
 
     func deleteWorkspaceSession(id: UUID) async throws {
+        try await deleteWorkspaceSessions(ids: [id])
+    }
+
+    func deleteWorkspaceSessions(ids: [UUID]) async throws {
+        guard !ids.isEmpty else { return }
         let session = try await validSession()
         var components = URLComponents(
             url: configuration.projectURL.appendingPathComponent("rest/v1/workspace_sessions"),
             resolvingAgainstBaseURL: false
         )
+        let values = ids.map { $0.uuidString.lowercased() }.joined(separator: ",")
         components?.queryItems = [
-            URLQueryItem(name: "id", value: "eq.\(id.uuidString.lowercased())")
+            URLQueryItem(name: "id", value: "in.(\(values))")
         ]
         guard let url = components?.url else { throw ClientError.invalidResponse }
         var request = URLRequest(url: url)

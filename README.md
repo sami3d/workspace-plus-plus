@@ -151,7 +151,7 @@ second list of names.
 
 ### Prebuilt app (no Xcode required)
 
-Download `Workspace++-1.2.0-macOS.zip` from the
+Download `Workspace++-1.3.0-macOS.zip` from the
 [latest GitHub release](https://github.com/sami3d/workspace-plus-plus/releases/latest),
 expand it, and move `Workspace++.app` into `/Applications`.
 
@@ -171,6 +171,13 @@ open "/Applications/Workspace++.app"
 
 macOS may ask you to toggle Workspace++ off and back on under **System Settings
 → Privacy & Security → Accessibility** after replacing the app.
+
+The Chrome companion and native bridge are included inside the app. Chrome
+still requires one explicit approval on each Mac: open **Workspace Library →
+Enable Chrome Integration…**, enable Developer mode at `chrome://extensions`,
+choose **Load unpacked**, and select the folder Workspace++ copies to the
+clipboard. A future Chrome Web Store release will replace this development
+approval with Chrome's normal one-click extension installation.
 
 ### Build from source
 
@@ -309,9 +316,10 @@ real-machine findings remain in `docs/superpowers/`.
 - A distant switch in arrow mode posts one paced shortcut per hop.
 - The active Mission Control thumbnail can omit its banner because macOS
   snapshots the currently rendered Space after the transient label has faded.
-- Chrome tab groups and pinned state are not exposed by Chrome's macOS
-  scripting interface, so they are not yet reconstructed. Unsupported apps may
-  reopen at app level when macOS does not expose a portable document locator.
+- Chrome tab groups and pinned state require the bundled Chrome companion;
+  without that one-time approval, Chrome falls back to its macOS scripting
+  interface and restores ordinary tabs only. Unsupported apps may reopen at app
+  level when macOS does not expose a portable document locator.
 - Cross-display switching briefly repositions the pointer because macOS routes
   Mission Control shortcuts to the display containing it.
 - Direct window movement briefly carries the window through macOS's normal

@@ -177,12 +177,60 @@ final class CloudSyncManager: ObservableObject {
     func refreshWorkspaceHistory() async {
         guard let client, state.email != nil else { return }
         do {
-            workspaceHistoryRows = try await client.fetchWorkspaceSessions()
+            var rows = try await client.fetchWorkspaceSessions()
+            let activeKeys = reliableActiveWorkspaceKeys()
+            var removedSessionCount = 0
+            if let activeKeys {
+                let stale = rows.filter {
+                    $0.deviceID == deviceID
+                        && $0.deletedAt == nil
+                        && !activeKeys.contains($0.workspaceKey)
+                }
+                if !stale.isEmpty {
+                    try await client.deleteWorkspaceSessions(ids: stale.map(\.id))
+                    let removedIDs = Set(stale.map(\.id))
+                    let deletedAt = Date()
+                    rows = rows.map { item in
+                        guard removedIDs.contains(item.id) else { return item }
+                        return historyItem(item, deletedAt: deletedAt)
+                    }
+                    removedSessionCount = stale.count
+                }
+            }
+            workspaceHistoryRows = rows
             workspaceHistory = workspaceHistoryRows.filter { $0.deletedAt == nil }
             historyStatus = workspaceHistory.isEmpty
                 ? "No workspace sessions have been saved yet."
                 : "\(workspaceHistory.count) saved workspace session\(workspaceHistory.count == 1 ? "" : "s")."
             await refreshWorkspaceLibrary()
+            var parkedInstanceCount = 0
+            if let activeKeys {
+                let staleInstances = workspaceLibrary.instances.filter {
+                    $0.deviceID == deviceID
+                        && $0.deletedAt == nil
+                        && $0.status != .parked
+                        && $0.localWorkspaceKey.map { !activeKeys.contains($0) } == true
+                }
+                for instance in staleInstances {
+                    try await client.setInstanceState(
+                        id: instance.id,
+                        status: .parked,
+                        localWorkspaceKey: nil
+                    )
+                }
+                parkedInstanceCount = staleInstances.count
+                if parkedInstanceCount > 0 { await refreshWorkspaceLibrary() }
+            }
+            if removedSessionCount > 0 || parkedInstanceCount > 0 {
+                var reconciliationMessages: [String] = []
+                if removedSessionCount > 0 {
+                    reconciliationMessages.append("Removed \(removedSessionCount) deleted-Space session\(removedSessionCount == 1 ? "" : "s") from this Mac")
+                }
+                if parkedInstanceCount > 0 {
+                    reconciliationMessages.append("parked \(parkedInstanceCount) cloud instance\(parkedInstanceCount == 1 ? "" : "s")")
+                }
+                historyStatus += " " + reconciliationMessages.joined(separator: " · ") + "."
+            }
         } catch {
             historyStatus = error.localizedDescription
         }
@@ -352,16 +400,8 @@ final class CloudSyncManager: ObservableObject {
             try await client.deleteWorkspaceSession(id: id)
             workspaceHistory.removeAll { $0.id == id }
             if let index = workspaceHistoryRows.firstIndex(where: { $0.id == id }) {
-                let old = workspaceHistoryRows[index]
-                workspaceHistoryRows[index] = CloudWorkspaceHistoryItem(
-                    id: old.id,
-                    deviceID: old.deviceID,
-                    deviceName: old.deviceName,
-                    workspaceKey: old.workspaceKey,
-                    contentHash: old.contentHash,
-                    snapshot: old.snapshot,
-                    capturedAt: old.capturedAt,
-                    updatedAt: old.updatedAt,
+                workspaceHistoryRows[index] = historyItem(
+                    workspaceHistoryRows[index],
                     deletedAt: Date()
                 )
             }
@@ -519,6 +559,32 @@ final class CloudSyncManager: ObservableObject {
             historyStatus = error.localizedDescription
             return false
         }
+    }
+
+    /// Returns nil when Space discovery is unhealthy. Reconciliation must
+    /// never interpret a transient empty/failed read as deletion of every
+    /// workspace on the Mac.
+    private func reliableActiveWorkspaceKeys() -> Set<String>? {
+        monitor.reload()
+        guard monitor.lastLoadError == nil, !monitor.spaces.isEmpty else { return nil }
+        return Set(monitor.spaces.map(\.storageID))
+    }
+
+    private func historyItem(
+        _ item: CloudWorkspaceHistoryItem,
+        deletedAt: Date?
+    ) -> CloudWorkspaceHistoryItem {
+        CloudWorkspaceHistoryItem(
+            id: item.id,
+            deviceID: item.deviceID,
+            deviceName: item.deviceName,
+            workspaceKey: item.workspaceKey,
+            contentHash: item.contentHash,
+            snapshot: item.snapshot,
+            capturedAt: item.capturedAt,
+            updatedAt: item.updatedAt,
+            deletedAt: deletedAt
+        )
     }
 
     private func currentDevice() -> CloudWorkspaceDevice {
