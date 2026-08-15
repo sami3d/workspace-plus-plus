@@ -34,6 +34,7 @@ targets:
         LSUIElement: true
         NSSupportsAutomaticTermination: false
         NSSupportsSuddenTermination: false
+        NSAppleEventsUsageDescription: Workspace++ reads Chrome window and tab URLs only to save and restore workspace sessions you control.
         WorkspaceCloudURL: https://djzumrvobmvfspnmxnqr.supabase.co
         # Safe to embed in the desktop client. Access is enforced by Auth + RLS;
         # never replace this with a secret/service-role key.

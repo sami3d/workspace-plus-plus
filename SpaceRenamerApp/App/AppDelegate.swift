@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var moveWindowPicker: MoveWindowPickerController!
     private var virtualSpaceCreator: VirtualSpaceCreationController!
     private var cloudSync: CloudSyncManager!
+    private var historyRestorer: WorkspaceSessionRestorer!
     private var prefs: PreferencesWindowController?
     private var spaceIDsObserver: AnyCancellable?
     private var raycastSpaceObserver: AnyCancellable?
@@ -43,6 +44,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switcher = SwitcherEngine(
             spaceSwitcher: ModeRoutingSpaceSwitcher(mode: { [weak names] in names?.switchMode ?? .default }),
             lookup: monitor)   // AppDelegate retains `monitor` (SwitcherEngine holds it weakly)
+        historyRestorer = WorkspaceSessionRestorer(
+            monitor: monitor,
+            names: names,
+            switcher: switcher
+        )
 
         moveWindowPicker = MoveWindowPickerController(
             monitor: monitor,
@@ -151,6 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 monitor: monitor,
                 names: names,
                 cloud: cloudSync,
+                historyRestorer: historyRestorer,
                 overlayChanged: { [weak self] enabled in
                     self?.overlay.setEnabled(enabled)
                 }

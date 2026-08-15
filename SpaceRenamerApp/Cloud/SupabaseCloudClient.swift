@@ -66,6 +66,46 @@ actor SupabaseCloudClient {
         }
     }
 
+    private struct DeviceWrite: Encodable {
+        let userID: UUID
+        let deviceID: UUID
+        let name: String
+        let model: String
+        let operatingSystem: String
+        let appVersion: String
+        let lastSeenAt: Date
+
+        private enum CodingKeys: String, CodingKey {
+            case userID = "userId"
+            case deviceID = "deviceId"
+            case name, model, operatingSystem, appVersion, lastSeenAt
+        }
+    }
+
+    private struct SessionWrite: Encodable {
+        let id: UUID
+        let userID: UUID
+        let deviceID: UUID
+        let deviceName: String
+        let workspaceKey: String
+        let contentHash: String
+        let snapshot: WorkspaceSessionSnapshot
+        let capturedAt: Date
+        let updatedAt: Date
+        let deletedAt: Date?
+
+        private enum CodingKeys: String, CodingKey {
+            case id
+            case userID = "userId"
+            case deviceID = "deviceId"
+            case deviceName, workspaceKey, contentHash, snapshot, capturedAt, updatedAt, deletedAt
+        }
+    }
+
+    private struct SessionDeletion: Encodable {
+        let deletedAt: Date
+    }
+
     private let configuration: CloudConfiguration
     private var session: CloudSession?
 
@@ -166,6 +206,96 @@ actor SupabaseCloudClient {
         )
     }
 
+    func registerDevice(_ device: CloudWorkspaceDevice) async throws {
+        let session = try await validSession()
+        var request = makeRequest(
+            path: "rest/v1/workspace_devices?on_conflict=user_id,device_id",
+            method: "POST"
+        )
+        addAPIHeaders(to: &request, accessToken: session.accessToken)
+        request.setValue("resolution=merge-duplicates,return=minimal", forHTTPHeaderField: "Prefer")
+        request.httpBody = try JSONEncoder.cloud.encode(DeviceWrite(
+            userID: session.userID,
+            deviceID: device.deviceID,
+            name: device.name,
+            model: device.model,
+            operatingSystem: device.operatingSystem,
+            appVersion: device.appVersion,
+            lastSeenAt: device.lastSeenAt
+        ))
+        _ = try await perform(request)
+    }
+
+    func saveWorkspaceSessions(
+        _ snapshots: [(id: UUID, hash: String, snapshot: WorkspaceSessionSnapshot)],
+        device: CloudWorkspaceDevice
+    ) async throws {
+        guard !snapshots.isEmpty else { return }
+        let session = try await validSession()
+        let now = Date()
+        let rows = snapshots.map {
+            SessionWrite(
+                id: $0.id,
+                userID: session.userID,
+                deviceID: device.deviceID,
+                deviceName: device.name,
+                workspaceKey: $0.snapshot.workspaceKey,
+                contentHash: $0.hash,
+                snapshot: $0.snapshot,
+                capturedAt: $0.snapshot.capturedAt,
+                updatedAt: now,
+                deletedAt: nil
+            )
+        }
+        var request = makeRequest(
+            path: "rest/v1/workspace_sessions?on_conflict=user_id,device_id,workspace_key",
+            method: "POST"
+        )
+        addAPIHeaders(to: &request, accessToken: session.accessToken)
+        request.setValue("resolution=merge-duplicates,return=minimal", forHTTPHeaderField: "Prefer")
+        request.httpBody = try JSONEncoder.cloud.encode(rows)
+        _ = try await perform(request)
+    }
+
+    func fetchWorkspaceSessions() async throws -> [CloudWorkspaceHistoryItem] {
+        let session = try await validSession()
+        var components = URLComponents(
+            url: configuration.projectURL.appendingPathComponent("rest/v1/workspace_sessions"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [
+            URLQueryItem(
+                name: "select",
+                value: "id,device_id,device_name,workspace_key,content_hash,snapshot,captured_at,updated_at,deleted_at"
+            ),
+            URLQueryItem(name: "order", value: "captured_at.desc"),
+        ]
+        guard let url = components?.url else { throw ClientError.invalidResponse }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        addAPIHeaders(to: &request, accessToken: session.accessToken)
+        let data = try await perform(request)
+        return try JSONDecoder.cloud.decode([CloudWorkspaceHistoryItem].self, from: data)
+    }
+
+    func deleteWorkspaceSession(id: UUID) async throws {
+        let session = try await validSession()
+        var components = URLComponents(
+            url: configuration.projectURL.appendingPathComponent("rest/v1/workspace_sessions"),
+            resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [
+            URLQueryItem(name: "id", value: "eq.\(id.uuidString.lowercased())")
+        ]
+        guard let url = components?.url else { throw ClientError.invalidResponse }
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        addAPIHeaders(to: &request, accessToken: session.accessToken)
+        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        request.httpBody = try JSONEncoder.cloud.encode(SessionDeletion(deletedAt: Date()))
+        _ = try await perform(request)
+    }
+
     private func authRequest<T: Decodable>(
         path: String,
         body: [String: String]
@@ -179,11 +309,21 @@ actor SupabaseCloudClient {
     private func validSession() async throws -> CloudSession {
         guard let existing = session else { throw ClientError.noSession }
         if existing.expiresAt.timeIntervalSinceNow > 60 { return existing }
-        let response: AuthResponse = try await authRequest(
-            path: "auth/v1/token?grant_type=refresh_token",
-            body: ["refresh_token": existing.refreshToken]
-        )
-        return try persist(response: response, fallbackEmail: existing.email)
+        do {
+            let response: AuthResponse = try await authRequest(
+                path: "auth/v1/token?grant_type=refresh_token",
+                body: ["refresh_token": existing.refreshToken]
+            )
+            return try persist(response: response, fallbackEmail: existing.email)
+        } catch ClientError.server(let message)
+            where message.localizedCaseInsensitiveContains("refresh token") {
+            // A password/account action or session rotation on another Mac can
+            // invalidate this installation's refresh token. Clear only the
+            // stale local credential so Preferences can offer sign-in again.
+            session = nil
+            try? CloudKeychain.deleteSession()
+            throw ClientError.noSession
+        }
     }
 
     private func persist(

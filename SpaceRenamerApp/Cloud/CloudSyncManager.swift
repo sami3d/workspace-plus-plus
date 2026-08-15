@@ -1,15 +1,22 @@
 import Combine
+import CryptoKit
+import Darwin
 import Foundation
 import SpaceRenamerCore
 
 @MainActor
 final class CloudSyncManager: ObservableObject {
     @Published private(set) var state: CloudSyncState
+    @Published private(set) var workspaceHistory: [CloudWorkspaceHistoryItem] = []
+    @Published private(set) var historyStatus = "Workspace history has not been loaded."
+    @Published private(set) var workspaceHistoryEnabled: Bool
 
     private let monitor: SpaceMonitor
     private let names: NameStore
     private let client: SupabaseCloudClient?
     private let deviceID: UUID
+    private let sessionCapture: WorkspaceSessionCaptureService
+    private let defaults: UserDefaults
 
     private var cancellables: Set<AnyCancellable> = []
     // Notification tokens are created and mutated on the main actor. ARC may
@@ -18,6 +25,9 @@ final class CloudSyncManager: ObservableObject {
     nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
     private var bootstrapTask: Task<Void, Never>?
     private var pendingSyncTask: Task<Void, Never>?
+    private var historyLoopTask: Task<Void, Never>?
+    private var historyCaptureTask: Task<Void, Never>?
+    private var workspaceHistoryRows: [CloudWorkspaceHistoryItem] = []
     private var hasBootstrapped = false
     private var isApplyingCloud = false
     private var lastSuccessfulSync: Date?
@@ -25,6 +35,11 @@ final class CloudSyncManager: ObservableObject {
     init(monitor: SpaceMonitor, names: NameStore, defaults: UserDefaults = .standard) {
         self.monitor = monitor
         self.names = names
+        self.defaults = defaults
+        self.workspaceHistoryEnabled = defaults.bool(
+            forKey: "SpaceRenamer.workspaceHistoryEnabled"
+        )
+        self.sessionCapture = WorkspaceSessionCaptureService(monitor: monitor, names: names)
         let key = "SpaceRenamer.cloudDeviceID"
         if let stored = defaults.string(forKey: key).flatMap(UUID.init(uuidString:)) {
             deviceID = stored
@@ -51,6 +66,8 @@ final class CloudSyncManager: ObservableObject {
     deinit {
         bootstrapTask?.cancel()
         pendingSyncTask?.cancel()
+        historyLoopTask?.cancel()
+        historyCaptureTask?.cancel()
         observers.forEach(NotificationCenter.default.removeObserver)
     }
 
@@ -71,8 +88,10 @@ final class CloudSyncManager: ObservableObject {
             if let session = await client.restoredSession() {
                 state = .syncing(email: session.email)
                 await synchronize(email: session.email)
+                await beginWorkspaceHistorySync()
             } else {
                 state = .signedOut(nil)
+                historyStatus = "Sign in under Cloud Sync to save or review workspace sessions."
                 hasBootstrapped = true
             }
         }
@@ -87,6 +106,7 @@ final class CloudSyncManager: ObservableObject {
             )
             state = .syncing(email: session.email)
             await synchronize(email: session.email)
+            await beginWorkspaceHistorySync()
         } catch SupabaseCloudClient.ClientError.emailConfirmationRequired {
             state = .signedOut("Check your email to confirm the account, then sign in.")
         } catch {
@@ -103,6 +123,7 @@ final class CloudSyncManager: ObservableObject {
             )
             state = .syncing(email: session.email)
             await synchronize(email: session.email)
+            await beginWorkspaceHistorySync()
         } catch {
             state = .failed(email: nil, message: error.localizedDescription)
         }
@@ -111,6 +132,13 @@ final class CloudSyncManager: ObservableObject {
     func signOut() async {
         pendingSyncTask?.cancel()
         pendingSyncTask = nil
+        historyLoopTask?.cancel()
+        historyLoopTask = nil
+        historyCaptureTask?.cancel()
+        historyCaptureTask = nil
+        workspaceHistory = []
+        workspaceHistoryRows = []
+        historyStatus = "Sign in to view saved workspace sessions."
         if let client { await client.signOut() }
         hasBootstrapped = true
         state = .signedOut(nil)
@@ -120,6 +148,79 @@ final class CloudSyncManager: ObservableObject {
         guard let email = state.email else { return }
         state = .syncing(email: email)
         await synchronize(email: email)
+    }
+
+    func captureWorkspaceHistoryNow() async {
+        guard workspaceHistoryEnabled else {
+            historyStatus = "Turn on Workspace History before saving app, window and tab details."
+            return
+        }
+        guard state.email != nil else {
+            historyStatus = "Sign in to save workspace sessions."
+            return
+        }
+        historyCaptureTask?.cancel()
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await captureAndUploadWorkspaceHistory()
+        }
+        historyCaptureTask = task
+        await task.value
+        historyCaptureTask = nil
+    }
+
+    func refreshWorkspaceHistory() async {
+        guard let client, state.email != nil else { return }
+        do {
+            workspaceHistoryRows = try await client.fetchWorkspaceSessions()
+            workspaceHistory = workspaceHistoryRows.filter { $0.deletedAt == nil }
+            historyStatus = workspaceHistory.isEmpty
+                ? "No workspace sessions have been saved yet."
+                : "\(workspaceHistory.count) saved workspace session\(workspaceHistory.count == 1 ? "" : "s")."
+        } catch {
+            historyStatus = error.localizedDescription
+        }
+    }
+
+    func deleteWorkspaceHistory(id: UUID) async {
+        guard let client, state.email != nil else { return }
+        do {
+            try await client.deleteWorkspaceSession(id: id)
+            workspaceHistory.removeAll { $0.id == id }
+            if let index = workspaceHistoryRows.firstIndex(where: { $0.id == id }) {
+                let old = workspaceHistoryRows[index]
+                workspaceHistoryRows[index] = CloudWorkspaceHistoryItem(
+                    id: old.id,
+                    deviceID: old.deviceID,
+                    deviceName: old.deviceName,
+                    workspaceKey: old.workspaceKey,
+                    contentHash: old.contentHash,
+                    snapshot: old.snapshot,
+                    capturedAt: old.capturedAt,
+                    updatedAt: old.updatedAt,
+                    deletedAt: Date()
+                )
+            }
+            historyStatus = "Deleted. It stays hidden across laptops until that workspace changes."
+        } catch {
+            historyStatus = error.localizedDescription
+        }
+    }
+
+    func setWorkspaceHistoryEnabled(_ enabled: Bool) {
+        workspaceHistoryEnabled = enabled
+        defaults.set(enabled, forKey: "SpaceRenamer.workspaceHistoryEnabled")
+        if enabled, state.email != nil {
+            Task { await beginWorkspaceHistorySync() }
+        } else {
+            historyLoopTask?.cancel()
+            historyLoopTask = nil
+            historyCaptureTask?.cancel()
+            historyCaptureTask = nil
+            historyStatus = state.email == nil
+                ? "Sign in to view saved workspace sessions."
+                : "Automatic Workspace History saving is off. Existing cloud sessions remain available."
+        }
     }
 
     /// Explicit cloud-authoritative restore. Workspace identity is matched
@@ -162,6 +263,107 @@ final class CloudSyncManager: ObservableObject {
             }
             observers.append(observer)
         }
+    }
+
+    private func beginWorkspaceHistorySync() async {
+        await refreshWorkspaceHistory()
+        historyLoopTask?.cancel()
+        guard workspaceHistoryEnabled else {
+            historyStatus = workspaceHistory.isEmpty
+                ? "Automatic Workspace History saving is off."
+                : "Automatic saving is off · \(workspaceHistory.count) existing session\(workspaceHistory.count == 1 ? "" : "s") available."
+            return
+        }
+        historyLoopTask = Task { [weak self] in
+            // Give launch, Chrome, and WindowServer a moment to settle before
+            // the first capture. Afterwards, five minutes is frequent enough
+            // for recovery without turning normal tab churn into constant
+            // network writes. Content hashes suppress unchanged uploads.
+            do { try await Task.sleep(for: .seconds(20)) }
+            catch { return }
+            while let self, !Task.isCancelled {
+                await self.captureWorkspaceHistoryNow()
+                do { try await Task.sleep(for: .seconds(300)) }
+                catch { return }
+            }
+        }
+    }
+
+    private func captureAndUploadWorkspaceHistory() async {
+        guard let client else { return }
+        historyStatus = "Capturing applications, windows and browser tabs…"
+        let capture = await sessionCapture.captureAll()
+        let existing = Dictionary(
+            workspaceHistoryRows
+                .filter { $0.deviceID == deviceID }
+                .map { ($0.workspaceKey, $0.contentHash) },
+            uniquingKeysWith: { _, latest in latest }
+        )
+        let changed = capture.snapshots.compactMap { snapshot
+            -> (id: UUID, hash: String, snapshot: WorkspaceSessionSnapshot)? in
+            let hash = sessionCapture.contentHash(for: snapshot)
+            guard existing[snapshot.workspaceKey] != hash else { return nil }
+            return (
+                stableSessionID(workspaceKey: snapshot.workspaceKey),
+                hash,
+                snapshot
+            )
+        }
+        do {
+            let device = currentDevice()
+            try await client.registerDevice(device)
+            try await client.saveWorkspaceSessions(changed, device: device)
+            await refreshWorkspaceHistory()
+            if changed.isEmpty {
+                historyStatus = "Everything is current · checked \(Date().formatted(date: .omitted, time: .shortened))."
+            }
+            if !capture.warnings.isEmpty {
+                historyStatus += " " + capture.warnings.joined(separator: " ")
+            }
+        } catch {
+            historyStatus = error.localizedDescription
+        }
+    }
+
+    private func currentDevice() -> CloudWorkspaceDevice {
+        CloudWorkspaceDevice(
+            deviceID: deviceID,
+            name: Host.current().localizedName ?? "Mac",
+            model: hardwareModel(),
+            operatingSystem: ProcessInfo.processInfo.operatingSystemVersionString,
+            appVersion: Bundle.main.object(
+                forInfoDictionaryKey: "CFBundleShortVersionString"
+            ) as? String ?? "Development",
+            lastSeenAt: Date()
+        )
+    }
+
+    private func hardwareModel() -> String {
+        var size = 0
+        guard sysctlbyname("hw.model", nil, &size, nil, 0) == 0, size > 0 else {
+            return "Mac"
+        }
+        var bytes = [CChar](repeating: 0, count: size)
+        guard sysctlbyname("hw.model", &bytes, &size, nil, 0) == 0 else {
+            return "Mac"
+        }
+        let content = bytes.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+        return String(decoding: content, as: UTF8.self)
+    }
+
+    private func stableSessionID(workspaceKey: String) -> UUID {
+        let digest = SHA256.hash(
+            data: Data("\(deviceID.uuidString.lowercased()):\(workspaceKey)".utf8)
+        )
+        var bytes = Array(digest.prefix(16))
+        bytes[6] = (bytes[6] & 0x0f) | 0x50
+        bytes[8] = (bytes[8] & 0x3f) | 0x80
+        return UUID(uuid: (
+            bytes[0], bytes[1], bytes[2], bytes[3],
+            bytes[4], bytes[5], bytes[6], bytes[7],
+            bytes[8], bytes[9], bytes[10], bytes[11],
+            bytes[12], bytes[13], bytes[14], bytes[15]
+        ))
     }
 
     private func scheduleAutomaticSync() {
@@ -210,6 +412,14 @@ final class CloudSyncManager: ObservableObject {
             // flow and must never appear as a cloud account failure.
             hasBootstrapped = true
             state = .signedIn(email: email, lastSync: lastSuccessfulSync)
+        } catch SupabaseCloudClient.ClientError.noSession {
+            pendingSyncTask?.cancel()
+            historyLoopTask?.cancel()
+            historyCaptureTask?.cancel()
+            workspaceHistory = []
+            workspaceHistoryRows = []
+            hasBootstrapped = true
+            state = .signedOut("Your cloud session expired. Sign in again.")
         } catch {
             hasBootstrapped = true
             state = .failed(email: email, message: error.localizedDescription)

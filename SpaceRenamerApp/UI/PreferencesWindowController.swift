@@ -25,6 +25,7 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
     private let monitor: SpaceMonitor
     private let names: NameStore
     private let cloud: CloudSyncManager
+    private let historyController: WorkspaceHistoryViewController
     private let table = NSTableView()
     private let categoryTable = NSTableView()
     private let openMenuRecorder = KeyboardShortcuts.RecorderCocoa(for: .openMenu)
@@ -52,13 +53,18 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
     private var cancellables: Set<AnyCancellable> = []
 
     init(monitor: SpaceMonitor, names: NameStore, cloud: CloudSyncManager,
+         historyRestorer: WorkspaceSessionRestorer,
          overlayChanged: @escaping (Bool) -> Void) {
         self.monitor = monitor
         self.names = names
         self.cloud = cloud
+        self.historyController = WorkspaceHistoryViewController(
+            cloud: cloud,
+            restorer: historyRestorer
+        )
         self.overlayChanged = overlayChanged
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 640, height: 790),
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 790),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered, defer: false)
         window.title = "Workspace++ Preferences"
@@ -105,10 +111,14 @@ final class PreferencesWindowController: NSWindowController, NSTableViewDataSour
         let cloudTab = NSTabViewItem(identifier: "cloud")
         cloudTab.label = "Cloud Sync"
         cloudTab.view = padded(makeCloudSection())
+        let historyTab = NSTabViewItem(identifier: "history")
+        historyTab.label = "Workspace History"
+        historyTab.view = historyController.view
         tabs.addTabViewItem(workspaces)
         tabs.addTabViewItem(categories)
         tabs.addTabViewItem(general)
         tabs.addTabViewItem(cloudTab)
+        tabs.addTabViewItem(historyTab)
         tabs.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(tabs)
         NSLayoutConstraint.activate([

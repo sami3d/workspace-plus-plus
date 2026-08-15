@@ -102,7 +102,7 @@ second list of names.
 - Live display names and active-state checkmarks.
 - Helpful warnings when required Mission Control shortcuts or Accessibility
   permission are missing.
-- 92 fast core tests plus CI builds for the AppKit app and Raycast extension.
+- 106 fast core tests plus CI builds for the AppKit app and Raycast extension.
 
 ### Optional Workspace++ cloud account
 
@@ -114,6 +114,25 @@ second list of names.
 - On another Mac, Workspace++ matches workspaces by monitor and workspace order
   when the machines' macOS Space UUIDs differ.
 - **Restore from Cloud** is an explicit option for a cloud-authoritative restore.
+
+### Workspace session history and restore
+
+- **Workspace History** is a separate opt-in within the cloud account. When
+  enabled, it keeps the latest restorable state of every Space on each signed-in
+  Mac, checks every five minutes, and uploads only when names, apps, windows or
+  browser tabs change.
+- Expand a laptop, workspace, app and window in Preferences to review the last
+  saved Chrome tab titles/URLs and the best available locator for other apps.
+- Ordinary Chrome windows are captured with their window bounds, tab order and
+  active tab. Incognito windows are deliberately excluded.
+- Finder and other apps are captured at the strongest level macOS exposes:
+  file/app URL when available, otherwise window title and app identity. Restore
+  is exact for normal Chrome tabs and best-effort for other apps.
+- Restore opens a new copy on the matching local Space and leaves current
+  windows untouched. Saved sessions can be deleted; a cross-device tombstone
+  prevents an unchanged session from immediately reappearing.
+- Every installation has a random device ID and human-readable Mac name, so
+  two laptops can autosave concurrently without overwriting each other.
 
 ## Requirements
 
@@ -194,6 +213,7 @@ Accessibility grant between updates.
    - global shortcuts;
    - the Move Focused Window picker shortcut;
    - an optional Workspace++ cloud account and sync controls;
+   - Workspace History capture, inspection, deletion and restore;
    - Launch at Login.
 4. In Raycast, search **Switch Space** and optionally assign it a global
    shortcut.
@@ -239,7 +259,7 @@ Workspace++.app
 ├── SpaceRenamerCore       Space parsing, identity, names, switching logic
 ├── AppKit menu-bar UI     Native combined mode + per-display controls
 ├── Mission Control UI     Per-Space overlay windows
-├── Cloud sync             Local-first account snapshot + Keychain session
+├── Cloud sync             Local-first settings + per-device session history
 └── Local Raycast bridge   JSON index + atomic switch requests
 
 Raycast extension
@@ -254,13 +274,20 @@ real-machine findings remain in `docs/superpowers/`.
 
 - Workspace names and settings stay on the Mac unless the user explicitly
   creates a Workspace++ account and enables cloud sync.
-- Cloud snapshots contain workspace names, category definitions and assignments,
-  colours, monitor/order metadata,
-  modification times, and a random installation ID—not application windows,
-  browsing data, or a hardware serial number.
+- Basic cloud snapshots contain workspace names, category definitions and
+  assignments, colours, monitor/order metadata, modification times, and a
+  random installation ID.
+- Workspace History additionally stores app and window identity, visible
+  window titles, available file/app locators, and normal Chrome tab titles and
+  URLs. It excludes Chrome Incognito windows and never stores a hardware serial
+  number. This data is stored in the account's owner-only database rows; it is
+  not currently end-to-end encrypted from the Workspace++ service operator.
 - Account sessions are stored in macOS Keychain. The app embeds only the
   backend's public publishable key; Auth plus row-level security confines every
   cloud snapshot to its owner.
+- macOS may ask once for permission to automate Google Chrome. Denying it keeps
+  generic app/window history working, and Workspace++ reports that Chrome tabs
+  could not be read instead of silently claiming a complete capture.
 - Workspace++ has no analytics or advertising trackers.
 - The Raycast bridge uses files under
   `~/Library/Application Support/Space Renamer/`.
@@ -277,6 +304,9 @@ real-machine findings remain in `docs/superpowers/`.
 - A distant switch in arrow mode posts one paced shortcut per hop.
 - The active Mission Control thumbnail can omit its banner because macOS
   snapshots the currently rendered Space after the transient label has faded.
+- Chrome tab groups and pinned state are not exposed by Chrome's macOS
+  scripting interface, so they are not yet reconstructed. Unsupported apps may
+  reopen at app level when macOS does not expose a portable document locator.
 - Cross-display switching briefly repositions the pointer because macOS routes
   Mission Control shortcuts to the display containing it.
 - Direct window movement briefly carries the window through macOS's normal

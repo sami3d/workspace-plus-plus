@@ -26,6 +26,8 @@
 	<false/>
 	<key>NSSupportsSuddenTermination</key>
 	<false/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Workspace++ reads Chrome window and tab URLs only to save and restore workspace sessions you control.</string>
 	<key>WorkspaceCloudURL</key>
 	<string>https://djzumrvobmvfspnmxnqr.supabase.co</string>
 	<key>WorkspaceCloudPublishableKey</key>
