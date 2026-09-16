@@ -18,7 +18,7 @@ parking, and restoring Mission Control workspaces across displays and Macs.
 ## Download
 
 Download the newest macOS package from the
-[latest Workspace++ release](https://github.com/sami3d/workspace-plus-plus-downloads/releases/latest).
+[latest Workspace++ release](https://github.com/sami3d/workspace-plus-plus/releases/latest).
 Each packaged release includes a SHA-256 checksum.
 
 Workspace++ requires macOS 13 or later. The current builds are self-signed and
