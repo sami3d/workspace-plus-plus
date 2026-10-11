@@ -17,6 +17,8 @@ parking, and restoring Mission Control workspaces across displays and Macs.
 
 ## Download
 
+[Installation instructions for another Mac](INSTALL.md).
+
 Download the newest macOS package from the
 [latest Workspace++ release](https://github.com/sami3d/workspace-plus-plus/releases/latest).
 Each packaged release includes a SHA-256 checksum.
