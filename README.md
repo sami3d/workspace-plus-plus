@@ -21,20 +21,13 @@ parking, and restoring Mission Control workspaces across displays and Macs.
 
 Download the newest macOS package from the
 [latest Workspace++ release](https://github.com/sami3d/workspace-plus-plus/releases/latest).
-Each packaged release includes a SHA-256 checksum. Version **1.3.3** includes fast Space switching and automatically imports a bundled pack of all 13 Raycast commands. Raycast may ask for sign-in or import approval once.
+Each packaged release includes a SHA-256 checksum. Version **1.3.4** pins the permanent release identity, checks Accessibility continuity, and includes a bundled pack of 14 Raycast commands with favourite-app controls in Preferences. Raycast may ask for sign-in or import approval once.
 
-Workspace++ requires macOS 13 or later. The current builds are self-signed and
-not Apple-notarized, so right-click **Workspace++.app** and choose **Open** on
-first launch. If macOS still blocks it, run:
+Workspace++ requires macOS 13 or later. The current release remains self-signed and not Apple-notarized; see the [installation guide](INSTALL.md) for Apple's first-launch approval flow.
 
-```sh
-xattr -dr com.apple.quarantine "/Applications/Workspace++.app"
-open "/Applications/Workspace++.app"
-```
+Official updates use one permanent signing identity and preserve the designated requirement. Release publication requires a positive before/after Accessibility trust test. [Signing status and builder instructions](SIGNING.md) distinguish the current self-signed setup from the pending Developer ID migration.
 
-Replacing the app does not delete workspace names, categories, preferences, or
-cloud data. macOS may ask you to toggle Workspace++ off and back on under
-**System Settings → Privacy & Security → Accessibility** after an update.
+Replacing the app preserves workspace names, preferences, categories and cloud data.
 
 The Chrome companion and native bridge are bundled inside Workspace++. Choose
 **Workspace Library → Enable Chrome Integration…** and follow the one-time

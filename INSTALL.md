@@ -8,7 +8,7 @@ Open the [latest Workspace++ release](https://github.com/sami3d/workspace-plus-p
 
 Under **Assets**, download the file named **Workspace++-<version>-macOS.zip**. Choose the app ZIP, rather than either “Source code” archive.
 
-The fast-switching update is included in [version 1.3.3](https://github.com/sami3d/workspace-plus-plus/releases/tag/v1.3.3). It also includes the previous window-movement fixes.
+The fast-switching update is included in [version 1.3.4](https://github.com/sami3d/workspace-plus-plus/releases/tag/v1.3.4). It also includes the previous window-movement fixes.
 
 ## 2. Install
 
@@ -33,16 +33,19 @@ Open **System Settings → Privacy & Security → Accessibility** and enable **W
 
 If it is missing, click **+**, select **Applications → Workspace++.app**, and enable it. Quit and reopen Workspace++ afterward.
 
-If window control stops working after replacing an older version, toggle its Accessibility permission off and back on, then reopen the app.
+Official updates now use one pinned signing identity and require an approval-preserving upgrade test before publication. An already-approved installation under that identity should retain its approval. If approval unexpectedly disappears, record the old/new signing requirements before changing Accessibility settings. An old build signed with a different certificate may still require one deliberate approval for the official identity.
 
 ## 5. Raycast commands are included
 
-Workspace++ 1.3.3 bundles all 13 commands and opens Raycast's native Import Extension command on first launch. If Raycast asks you to sign in or approve the import, complete that step once. No Node.js, npm, Xcode, or separate source checkout is needed on this Mac. If you cancel, retry from **Workspace++ Preferences → Install Raycast Commands…**.
+Workspace++ 1.3.4 bundles 14 commands and opens Raycast's native Import Extension command on first launch. If Raycast asks you to sign in or approve the import, complete that step once. No Node.js, npm, Xcode, or separate source checkout is needed on this Mac. If you cancel, retry from **Workspace++ Preferences → Install Raycast Commands…**.
 
 If Raycast is not installed yet, the pack stays bundled. When you install and launch Raycast while Workspace++ is running, setup is attempted automatically. You can also use the Preferences button after installing Raycast.
 
+Custom app controls are in **Workspace++ Preferences → Raycast Apps**. Add an installed app, choose its command name and New window or New app instance, then Save. The **New App Window** command in Raycast lists your choices even while Workspace++ is closed. For each custom name directly in root search and a per-command Raycast hotkey, add the folder shown by **Show Favourite Commands Folder** once in Raycast Settings → Script Commands.
+
 Included commands:
 
+- **New App Window** — choose a favourite app configured in Preferences.
 - **Switch Space** — search live workspace names.
 - **Switch Workspace Picker** — open the native Workspace++ switch picker.
 - **Move Window** — open the picker with Move and Move & Follow.
@@ -71,6 +74,8 @@ Replacing the app preserves this Mac’s existing workspace names and preference
 
 ## Instructions to give Codex on the other laptop
 
-> Install the latest Workspace++ release from https://github.com/sami3d/workspace-plus-plus/releases/latest. Use the universal macOS app ZIP and verify its SHA-256 against the release checksum. Ensure the release is at least 1.3.3. Quit the existing app before replacing /Applications/Workspace++.app; preserve its existing settings and workspace names. Launch it and confirm its version. Verify that its bundled Raycast pack imports, then check Switch Space and the New Window commands in Raycast. If setup was cancelled, use Workspace++ Preferences → Install Raycast Commands. If macOS blocks launch, guide me through Apple's Privacy & Security → Open Anyway flow. Confirm Accessibility is enabled, and test switching to a distant workspace plus Move and Move & Follow using a disposable window. In Preferences, leave “Use legacy Ctrl+digit shortcuts” unchecked to use fast switching. Report any failed checks.
+> Install the latest Workspace++ release from https://github.com/sami3d/workspace-plus-plus/releases/latest. Use the universal macOS app ZIP and verify its SHA-256 against the release checksum. Ensure the release is at least 1.3.4. Quit the existing app before replacing /Applications/Workspace++.app; preserve its existing settings and workspace names. Use the prebuilt app as supplied: do not re-sign it, generate a certificate, or reset Accessibility during an upgrade. Launch it and confirm its version. Verify that its bundled Raycast pack imports, then check Switch Space and the New Window commands in Raycast. If setup was cancelled, use Workspace++ Preferences → Install Raycast Commands. If macOS blocks launch, guide me through Apple's Privacy & Security → Open Anyway flow. Confirm Accessibility is enabled, and test switching to a distant workspace plus Move and Move & Follow using a disposable window. In Preferences, leave “Use legacy Ctrl+digit shortcuts” unchecked to use fast switching. Report any failed checks.
 
 Version 1.3.2 upgrades the old arrow-switching setting automatically. Fast switching supports more than nine desktops. It uses undocumented native gesture fields, so compatibility can vary with macOS updates. The title-bar fallback for windows that reject direct placement can still visit the destination and return.
+
+Release signing and builder identity handling are explained in [SIGNING.md](SIGNING.md). A normal installation does not require the release private key or its .p12 backup.
