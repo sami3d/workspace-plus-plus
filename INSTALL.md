@@ -8,7 +8,7 @@ Open the [latest Workspace++ release](https://github.com/sami3d/workspace-plus-p
 
 Under **Assets**, download the file named **Workspace++-<version>-macOS.zip**. Choose the app ZIP, rather than either “Source code” archive.
 
-The window-move update is included in [version 1.3.1](https://github.com/sami3d/workspace-plus-plus/releases/tag/v1.3.1).
+The fast-switching update is included in [version 1.3.2](https://github.com/sami3d/workspace-plus-plus/releases/tag/v1.3.2). It also includes the previous window-movement fixes.
 
 ## 2. Install
 
@@ -49,3 +49,9 @@ Full-screen and tiled windows cannot be moved this way. **Command-Shift-S** open
 If you already use Workspace++ cloud sync, sign in with the same Workspace++ account on this Mac. Chrome integration must be enabled separately on each Mac from **Workspace Library → Enable Chrome Integration**.
 
 Replacing the app preserves this Mac’s existing workspace names and preferences. Installing the app on a new Mac does not automatically copy local settings from your other laptop.
+
+## Instructions to give Codex on the other laptop
+
+> Install the latest Workspace++ release from https://github.com/sami3d/workspace-plus-plus/releases/latest. Use the universal macOS app ZIP and verify its SHA-256 against the release checksum. Ensure the release is at least 1.3.2. Quit the existing app before replacing /Applications/Workspace++.app; preserve its existing settings and workspace names. Launch it and confirm its version. If macOS blocks launch, guide me through Apple's Privacy & Security → Open Anyway flow. Confirm Accessibility is enabled, and test switching to a distant workspace plus Move and Move & Follow using a disposable window. In Preferences, leave “Use legacy Ctrl+digit shortcuts” unchecked to use fast switching. Report any failed checks.
+
+Version 1.3.2 upgrades the old arrow-switching setting automatically. Fast switching supports more than nine desktops. It uses undocumented native gesture fields, so compatibility can vary with macOS updates. The title-bar fallback for windows that reject direct placement can still visit the destination and return.
