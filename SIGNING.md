@@ -16,7 +16,7 @@ Import that SAME identity before building, then run the fingerprint verification
 
 ## Current status and Developer ID migration
 
-Version 1.3.7 remains self-signed and is not Apple-notarized. The owner does not yet have a Developer ID Application identity or notarization credentials, so that migration has not been completed. The build path is prepared to require the exact Developer ID certificate, one Apple Developer team, hardened runtime, a secure timestamp, accepted notarization, a stapled ticket and Gatekeeper validation.
+Version 1.3.8 remains self-signed and is not Apple-notarized. The owner does not yet have a Developer ID Application identity or notarization credentials, so that migration has not been completed. The build path is prepared to require the exact Developer ID certificate, one Apple Developer team, hardened runtime, a secure timestamp, accepted notarization, a stapled ticket and Gatekeeper validation.
 
 Moving from the existing self-signed requirement to Developer ID necessarily changes the requirement. That one-time migration must be rehearsed and may require Accessibility reapproval. After migration, a team-based Developer ID requirement can remain stable across certificate renewal; each renewal must still pass the old/new requirement comparison and an actual AX trust upgrade test before publication. Renewal continuity is not yet tested because those certificates are not available.
 
@@ -37,3 +37,7 @@ The published 1.3.5 baseline and 1.3.6 candidate both returned AXIsProcessTruste
 ## 1.3.7 validation
 
 The published 1.3.6 baseline and 1.3.7 candidate both returned AXIsProcessTrusted() = true across an in-place upgrade, without any permission prompt or reset. Both architecture signatures retain the permanent certificate and designated requirement. The production overlay-window regression test verifies the 100 ms hide deadline, repeated updates, occlusion notifications, Mission Control preview state and consecutive switches.
+
+## 1.3.8 validation
+
+Upgrading the published 1.3.7 app to 1.3.8 (build 12) preserved AXIsProcessTrusted() = true without any permission prompt or reset. Both architecture signatures retain the permanent certificate and designated requirement. This is a version-metadata release of the same executable; the signed Info.plist and CodeDirectory hashes differ between versions.
