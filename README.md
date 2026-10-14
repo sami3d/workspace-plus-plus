@@ -21,7 +21,7 @@ parking, and restoring Mission Control workspaces across displays and Macs.
 
 Download the newest macOS package from the
 [latest Workspace++ release](https://github.com/sami3d/workspace-plus-plus/releases/latest).
-Each packaged release includes a SHA-256 checksum. Version **1.3.4** pins the permanent release identity, checks Accessibility continuity, and includes a bundled pack of 14 Raycast commands with favourite-app controls in Preferences. Raycast may ask for sign-in or import approval once.
+Each packaged release includes a SHA-256 checksum. Version **1.3.5** vertically centres labels and controls across Preferences and workspace pickers. It preserves the permanent release identity, checks Accessibility continuity, and includes a bundled pack of 14 Raycast commands with favourite-app controls in Preferences. Raycast may ask for sign-in or import approval once.
 
 Workspace++ requires macOS 13 or later. The current release remains self-signed and not Apple-notarized; see the [installation guide](INSTALL.md) for Apple's first-launch approval flow.
 

@@ -16,7 +16,7 @@ Import that SAME identity before building, then run the fingerprint verification
 
 ## Current status and Developer ID migration
 
-Version 1.3.4 remains self-signed and is not Apple-notarized. The owner does not yet have a Developer ID Application identity or notarization credentials, so that migration has not been completed. The build path is prepared to require the exact Developer ID certificate, one Apple Developer team, hardened runtime, a secure timestamp, accepted notarization, a stapled ticket and Gatekeeper validation.
+Version 1.3.5 remains self-signed and is not Apple-notarized. The owner does not yet have a Developer ID Application identity or notarization credentials, so that migration has not been completed. The build path is prepared to require the exact Developer ID certificate, one Apple Developer team, hardened runtime, a secure timestamp, accepted notarization, a stapled ticket and Gatekeeper validation.
 
 Moving from the existing self-signed requirement to Developer ID necessarily changes the requirement. That one-time migration must be rehearsed and may require Accessibility reapproval. After migration, a team-based Developer ID requirement can remain stable across certificate renewal; each renewal must still pass the old/new requirement comparison and an actual AX trust upgrade test before publication. Renewal continuity is not yet tested because those certificates are not available.
 
@@ -25,3 +25,7 @@ Moving from the existing self-signed requirement to Developer ID necessarily cha
 A diagnostic-capable baseline, signed with the identity already approved on the test Mac and labelled 1.3.3, returned AXIsProcessTrusted() = true. Upgrading it in Applications to 1.3.4 also returned true, without any permission prompt or reset. The two builds had different executable/CodeDirectory hashes but identical designated requirements. The published 1.3.3 requirement also matched. The stock 1.3.3 binary lacks the API reporting flag, so the measured baseline was an instrumented build rather than the unchanged published executable.
 
 This is a local continuity result for that approved identity. It does not assert that a Mac previously approved under a different certificate has been tested.
+
+## 1.3.5 validation
+
+The unchanged published 1.3.4 app and the 1.3.5 candidate both returned AXIsProcessTrusted() = true when installed consecutively at /Applications/Workspace++.app. No permission prompt or Accessibility reset was used. The executable and CodeDirectory hashes changed while the pinned certificate, bundle identifier and designated requirement remained identical. Both Apple Silicon and Intel slices passed signature verification.
