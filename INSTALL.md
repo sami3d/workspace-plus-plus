@@ -8,7 +8,7 @@ Open the [latest Workspace++ release](https://github.com/sami3d/workspace-plus-p
 
 Under **Assets**, download the file named **Workspace++-<version>-macOS.zip**. Choose the app ZIP, rather than either “Source code” archive.
 
-The fast-switching update is included in [version 1.3.2](https://github.com/sami3d/workspace-plus-plus/releases/tag/v1.3.2). It also includes the previous window-movement fixes.
+The fast-switching update is included in [version 1.3.3](https://github.com/sami3d/workspace-plus-plus/releases/tag/v1.3.3). It also includes the previous window-movement fixes.
 
 ## 2. Install
 
@@ -35,7 +35,26 @@ If it is missing, click **+**, select **Applications → Workspace++.app**, and 
 
 If window control stops working after replacing an older version, toggle its Accessibility permission off and back on, then reopen the app.
 
-## 5. Move a window
+## 5. Raycast commands are included
+
+Workspace++ 1.3.3 bundles all 13 commands and opens Raycast's native Import Extension command on first launch. If Raycast asks you to sign in or approve the import, complete that step once. No Node.js, npm, Xcode, or separate source checkout is needed on this Mac. If you cancel, retry from **Workspace++ Preferences → Install Raycast Commands…**.
+
+If Raycast is not installed yet, the pack stays bundled. When you install and launch Raycast while Workspace++ is running, setup is attempted automatically. You can also use the Preferences button after installing Raycast.
+
+Included commands:
+
+- **Switch Space** — search live workspace names.
+- **Switch Workspace Picker** — open the native Workspace++ switch picker.
+- **Move Window** — open the picker with Move and Move & Follow.
+- **Chrome New, Helium New, Claude New, Figma New, ChatGPT New, Granola New, Notion New, Finder New, TickTick New, Projects New**.
+
+App-window commands require the corresponding app on the receiving Mac. Projects New requires a synced local Google Drive `_Projects/2026` folder. macOS may request Raycast Accessibility and Automation permission the first time you use those commands; existing permissions and Raycast hotkeys are specific to each Mac.
+
+The pack was tested with Raycast 2.8. Older Raycast versions may not run it. Portable app-window scripts are exported to `~/Library/Application Support/Space Renamer/Raycast App Commands`; you can add that directory in Raycast Settings → Script Commands as a fallback.
+
+For individual workspace names directly in Raycast's root search, add `~/Library/Application Support/Space Renamer/Raycast Script Commands` once under Raycast Settings → Script Commands. The bundled Switch Space command already searches all workspace names without adding that folder.
+
+## 6. Move a window
 
 1. Focus a regular application window.
 2. Open the Workspace++ menu and choose **Move focused window**, or press **Command-Shift-M**.
@@ -52,6 +71,6 @@ Replacing the app preserves this Mac’s existing workspace names and preference
 
 ## Instructions to give Codex on the other laptop
 
-> Install the latest Workspace++ release from https://github.com/sami3d/workspace-plus-plus/releases/latest. Use the universal macOS app ZIP and verify its SHA-256 against the release checksum. Ensure the release is at least 1.3.2. Quit the existing app before replacing /Applications/Workspace++.app; preserve its existing settings and workspace names. Launch it and confirm its version. If macOS blocks launch, guide me through Apple's Privacy & Security → Open Anyway flow. Confirm Accessibility is enabled, and test switching to a distant workspace plus Move and Move & Follow using a disposable window. In Preferences, leave “Use legacy Ctrl+digit shortcuts” unchecked to use fast switching. Report any failed checks.
+> Install the latest Workspace++ release from https://github.com/sami3d/workspace-plus-plus/releases/latest. Use the universal macOS app ZIP and verify its SHA-256 against the release checksum. Ensure the release is at least 1.3.3. Quit the existing app before replacing /Applications/Workspace++.app; preserve its existing settings and workspace names. Launch it and confirm its version. Verify that its bundled Raycast pack imports, then check Switch Space and the New Window commands in Raycast. If setup was cancelled, use Workspace++ Preferences → Install Raycast Commands. If macOS blocks launch, guide me through Apple's Privacy & Security → Open Anyway flow. Confirm Accessibility is enabled, and test switching to a distant workspace plus Move and Move & Follow using a disposable window. In Preferences, leave “Use legacy Ctrl+digit shortcuts” unchecked to use fast switching. Report any failed checks.
 
 Version 1.3.2 upgrades the old arrow-switching setting automatically. Fast switching supports more than nine desktops. It uses undocumented native gesture fields, so compatibility can vary with macOS updates. The title-bar fallback for windows that reject direct placement can still visit the destination and return.

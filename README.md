@@ -21,7 +21,7 @@ parking, and restoring Mission Control workspaces across displays and Macs.
 
 Download the newest macOS package from the
 [latest Workspace++ release](https://github.com/sami3d/workspace-plus-plus/releases/latest).
-Each packaged release includes a SHA-256 checksum. Version **1.3.2** adds fast Space switching and modern direct window placement.
+Each packaged release includes a SHA-256 checksum. Version **1.3.3** includes fast Space switching and automatically imports a bundled pack of all 13 Raycast commands. Raycast may ask for sign-in or import approval once.
 
 Workspace++ requires macOS 13 or later. The current builds are self-signed and
 not Apple-notarized, so right-click **Workspace++.app** and choose **Open** on
